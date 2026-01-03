@@ -1,4 +1,5 @@
 #include "cli.h"
+#include "rle.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -98,6 +99,17 @@ cli_args_t parse_cli(int argc, char **argv) {
 
 int run_cli(int argc, char **argv) {
     cli_args_t args = parse_cli(argc, argv); // here args contains valid fields
+    // exit status code
+    int status = 0;
 
-    return 0; // success
+    switch (args.algorithm) {
+    case ALGO_RLE:
+        if (args.mode == MODE_COMPRESS)
+            status = rle_compress(args.input_path, args.output_path);
+        else
+            status = rle_decompress(args.input_path, args.output_path);
+        break;
+    }
+
+    return status;
 }

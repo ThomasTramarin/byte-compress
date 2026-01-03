@@ -1,10 +1,10 @@
 CC = gcc
-CFLAGS = -Iinclude -Wall
+CFLAGS = -Iinclude -Wall -g
 TARGET = build/bcomp
 
-SRC = src/main.c
+SRC = src/main.c src/cli.c src/rle.c
 
-$(TARGET):
+$(TARGET):	$(SRC)
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
