@@ -1,13 +1,15 @@
 #include "rle.h"
 #include <stdio.h>
+#include <string.h>
 
 #define BLOCK_SIZE 4096
 
 /**
  * Write a run block to the file.
- * - MSB = 1 indicates a run
- * - 7 bits = count - 1 (range 1..128)
- * - Followed by the byte to repeat
+ *
+ * Format:
+ * - 1 byte: MSB = 1 (flag run), lower 7 bits = count - 1 (range 1..128)
+ * - 1 byte: the byte to repeat
  */
 static void rle_write_group_run(uint8_t byte, uint8_t count, FILE *fp) {
     uint8_t group[2];
@@ -18,10 +20,11 @@ static void rle_write_group_run(uint8_t byte, uint8_t count, FILE *fp) {
 }
 
 /**
- * Write a literal block to the file.
- * - MSB = 0 indicates literal
- * - 7 bits = count - 1 (range 1..128)
- * - Followed by the bytes to copy
+ * Write a literal block (non-repeated bytes) to the file.
+ *
+ * Format:
+ * - 1 byte: MSB = 0 (flag literal), lower 7 bits = count - 1 (range 1..128)
+ * - N bytes: the literal bytes
  */
 static void rle_write_group_literal(uint8_t not_compressed[], uint8_t count, FILE *fp) {
     fputc(count - 1, fp);
@@ -128,4 +131,64 @@ int rle_compress(const char *input_path, const char *output_path) {
 
     return 0;
 }
-int rle_decompress(const char *input_path, const char *output_path) {}
+
+/**
+ * Decompress a file compressed with RLE algorithm.
+ *
+ * Algorithm:
+ *  1. Check that the first byte is TYPE_RLE
+ *  2. Read the "count" byte and check MSB
+ *      - MSB=1: run block, write the next byte (count + 1) times
+ *      - MSB=0: literal block, write next (count + 1) bytes
+ *  5. Repeat starting from the 2nd step until EOF
+ */
+int rle_decompress(const char *input_path, const char *output_path) {
+    FILE *fi = fopen(input_path, "rb");
+    FILE *fo = fopen(output_path, "wb");
+    // Paths should already be validated, this is just a safety check
+    if (!fi || !fo)
+        return 1;
+
+    // Read the header
+    rle_header_t h;
+    fread(&h, sizeof(h), 1, fi);
+    if (h.common.type != TYPE_RLE) {
+        fprintf(stderr, "Error: input file is not TYPE_RLE\n");
+        fclose(fi);
+        fclose(fo);
+        return 1;
+    }
+
+    uint8_t write_buf[128];
+    int c;
+
+    while ((c = fgetc(fi)) != EOF) {
+        uint8_t count_byte = (uint8_t)c;
+        uint8_t count_value = (count_byte & 0b01111111) + 1;
+
+        // RUN
+        if (count_byte & 0b10000000) {
+            int run_byte = fgetc(fi);
+            if (run_byte == EOF) {
+                fprintf(stderr, "Error: unexpected EOF while reading run byte.\n");
+                fclose(fi);
+                fclose(fo);
+                return 1;
+            }
+            memset(write_buf, run_byte, count_value);
+            fwrite(write_buf, 1, count_value, fo);
+        } else { // LITERAL
+            if (fread(write_buf, 1, count_value, fi) != count_value) {
+                fprintf(stderr, "Error: unexpected EOF while reading literal bytes.\n");
+                fclose(fi);
+                fclose(fo);
+                return 1;
+            }
+            fwrite(write_buf, 1, count_value, fo);
+        }
+    }
+
+    fclose(fi);
+    fclose(fo);
+    return 0;
+}
