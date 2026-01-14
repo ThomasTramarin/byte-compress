@@ -12,10 +12,10 @@ static cli_cmd_t *bcomp_cmd_subcommands[] = {
 };
 
 void bcomp_cmd_help() {
-    printf("usage: bcomp [options]\n");
+    printf("usage: bcomp <cmd> [options]\n");
 }
 
-int bcomp_cmd_run(int argc, char **argv) {
+int bcomp_cmd_run(cli_ctx_t *ctx) {
     bcomp_cmd_help();
     return 0;
 }
