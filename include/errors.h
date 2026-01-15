@@ -12,6 +12,8 @@ typedef enum {
     CLI_ERR_TOO_MANY_POSITIONALS,
     CLI_ERR_MISSING_POSITIONAL,
 
+    CLI_ERR_INVALID_CHOICE,
+
     CLI_ERR_UNKNOWN_COMMAND,
 } cli_err_code_t;
 

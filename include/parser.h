@@ -2,6 +2,7 @@
 #define PARSER_H
 #include "cli.h"
 #include "errors.h"
+#include "helpers.h"
 #include <stdint.h>
 
 #define CLI_ARG_FLAG_REQUIRED 0x01
@@ -18,6 +19,9 @@ typedef struct {
     cli_arg_type_t type;
     uint8_t flags;
     void *value;
+
+    const char **choices;
+    int choices_count;
 } cli_opt_t;
 
 typedef struct {
@@ -25,6 +29,9 @@ typedef struct {
     cli_arg_type_t type;
     uint8_t flags;
     void *value;
+
+    const char **choices;
+    int choices_count;
 } cli_pos_t;
 
 typedef struct cli_cmd_t cli_cmd_t;

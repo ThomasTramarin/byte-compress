@@ -16,6 +16,8 @@ const char *cli_err_code_to_string(cli_err_code_t code) {
         return "missing positional argument";
     case CLI_ERR_UNKNOWN_COMMAND:
         return "unknown command";
+    case CLI_ERR_INVALID_CHOICE:
+        return "invalid choice";
     default:
         return "unknown error";
     }

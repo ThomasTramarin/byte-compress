@@ -35,6 +35,18 @@ cli_cmd_t *resolve_command(cli_cmd_t *cmd, cli_ctx_t *ctx) {
     return current;
 }
 
+static int is_choice_valid(const char *input, const char **choices, int count) {
+    if (choices == NULL || count == 0)
+        return 1; // the argument has no choices
+
+    for (int i = 0; i < count; i++) {
+        if (strcmp(choices[i], input) == 0)
+            return 1; // choice found
+    }
+
+    return 0; // error
+}
+
 static cli_err_t parse_long_option(cli_cmd_t *cmd, cli_ctx_t *ctx, int *i) {
     char *raw_arg = ctx->argv[*i];
     char *arg = raw_arg + 2; // skip --
@@ -69,6 +81,11 @@ static cli_err_t parse_long_option(cli_cmd_t *cmd, cli_ctx_t *ctx, int *i) {
                         .arg = opt->long_name,
                         .argv_idx = *i,
                     };
+                }
+
+                // validate choices
+                if (!is_choice_valid(val, opt->choices, opt->choices_count)) {
+                    return (cli_err_t){.code = CLI_ERR_INVALID_CHOICE, .arg = val, .argv_idx = *i};
                 }
 
                 *(char **)opt->value = val;
@@ -135,6 +152,11 @@ static cli_err_t parse_short_option(cli_cmd_t *cmd, cli_ctx_t *ctx, int *i) {
                 };
             }
 
+            // validate choices
+            if (!is_choice_valid(val, opt->choices, opt->choices_count)) {
+                return (cli_err_t){.code = CLI_ERR_INVALID_CHOICE, .arg = val, .argv_idx = *i};
+            }
+
             *(char **)opt->value = val;
         }
 
@@ -144,7 +166,7 @@ static cli_err_t parse_short_option(cli_cmd_t *cmd, cli_ctx_t *ctx, int *i) {
     return (cli_err_t){.code = CLI_OK};
 }
 
-static cli_err_t parse_positional(cli_cmd_t *cmd, const char *arg, int *positional_idx) {
+static cli_err_t parse_positional(cli_cmd_t *cmd, const char *arg, int *positional_idx, int i) {
     if (*positional_idx >= cmd->positional_count) {
         return (cli_err_t){
             .code = CLI_ERR_TOO_MANY_POSITIONALS,
@@ -153,6 +175,11 @@ static cli_err_t parse_positional(cli_cmd_t *cmd, const char *arg, int *position
     }
 
     cli_pos_t *pos = &cmd->positionals[*positional_idx];
+
+    // validate choices
+    if (!is_choice_valid(arg, pos->choices, pos->choices_count)) {
+        return (cli_err_t){.code = CLI_ERR_INVALID_CHOICE, .arg = arg, .argv_idx = i};
+    }
 
     if (pos->type == CLI_ARG_TYPE_STRING) {
         *(char **)pos->value = (char *)arg;
@@ -198,7 +225,7 @@ cli_err_t parse_arguments(cli_cmd_t *cmd, cli_ctx_t *ctx) {
         }
 
         // POSITIONALS
-        cli_err_t err = parse_positional(cmd, arg, &positional_idx);
+        cli_err_t err = parse_positional(cmd, arg, &positional_idx, i);
         if (err.code != CLI_OK)
             return err;
     }
