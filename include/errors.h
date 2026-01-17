@@ -1,7 +1,9 @@
 #ifndef ERROR_H
 #define ERROR_H
 #include "cli.h"
+#include <errno.h>
 
+// CLI ERRORS
 typedef enum {
     CLI_OK = 0,
 
@@ -27,4 +29,19 @@ typedef struct {
 const char *cli_err_code_to_string(cli_err_code_t code);
 void cli_print_error(const cli_err_t *err, const cli_ctx_t *ctx);
 
+// RUNTIME ERRORS
+typedef enum {
+    RUN_OK = 0,
+    RUN_ERR_IO,
+} run_err_code_t;
+
+typedef struct {
+    run_err_code_t code;
+    const char *msg;
+    int sys_errno;
+} run_err_t;
+
 #endif
+
+const char *run_err_code_to_string(run_err_code_t code);
+void run_print_error(const run_err_t *err);
