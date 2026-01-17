@@ -1,6 +1,6 @@
 #include "rle.h"
 #include "crc.h"
-#include <stdio.h>
+#include "errors.h"
 #include <string.h>
 
 #define BLOCK_SIZE 4096
@@ -33,29 +33,10 @@ static void rle_write_group_literal(uint8_t not_compressed[], uint8_t count, FIL
 }
 
 /**
- * Handle operation failure.
- * Prints an error message, closes any open files, and deletes the output file if provided.
- */
-int rle_cleanup_failed_output(FILE *fi, FILE *fo, const char *output_path, const char *msg) {
-    if (msg)
-        fprintf(stderr, "Error: %s\n", msg);
-
-    if (fi)
-        fclose(fi);
-    if (fo) {
-        fclose(fo);
-        if (output_path) {
-            if (remove(output_path) != 0) {
-                fprintf(stderr, "Error: failed to remove incomplete output file: %s\n", output_path);
-            }
-        }
-    }
-
-    return 1; // return error code
-}
-
-/**
  * Compress a file using a RLE different implementation with MSB flag.
+ *
+ * @warning The FILE pointers `fi` and `fo` are not closed by this function.
+ *          The caller must close them after the operation.
  *
  * Algorithm:
  *  1. Accumulate literal bytes until 3 identical bytes are found (start RUN)
@@ -64,12 +45,12 @@ int rle_cleanup_failed_output(FILE *fi, FILE *fo, const char *output_path, const
  *  4. Repeat until EOF
  *  5. Update CRC32 during writing and append a trailer at the end.
  */
-int rle_compress(const char *input_path, const char *output_path) {
-    FILE *fi = fopen(input_path, "rb");
-    FILE *fo = fopen(output_path, "wb");
-    // Paths should already be validated, this is just a safety check
-    if (!fi || !fo)
-        return rle_cleanup_failed_output(fi, fo, output_path, "cannot open input or output file");
+run_err_t rle_compress(FILE *fi, FILE *fo) {
+    if (!fi)
+        return (run_err_t){.code = RUN_ERR_IO, .msg = "input file pointer is NULL", .sys_errno = errno};
+
+    if (!fo)
+        return (run_err_t){.code = RUN_ERR_IO, .msg = "output file pointer is NULL", .sys_errno = errno};
 
     // Write rle header (1 byte)
     rle_header_t h;
@@ -78,80 +59,60 @@ int rle_compress(const char *input_path, const char *output_path) {
 
     uint32_t crc = 0xFFFFFFFF;
 
-    uint8_t buffer[BLOCK_SIZE];  // read buffer
-    size_t read;                 // the number of bytes read in the current block
-    uint8_t literal_buffer[128]; // accumulate literal bytes
-    size_t literal_len = 0;
+    uint8_t in_buf[BLOCK_SIZE]; // read buffer
+    size_t read;                // the number of bytes read in the current block
+    uint8_t lit_buf[128];       // accumulate literal bytes
+    size_t lit_len = 0;
     uint8_t run_byte;
     size_t run_len = 0;
 
     // read block by block
-    while ((read = fread(buffer, 1, BLOCK_SIZE, fi)) > 0) {
+    while ((read = fread(in_buf, 1, BLOCK_SIZE, fi)) > 0) {
         for (size_t i = 0; i < read; i++) {
-            uint8_t b = buffer[i];
+            uint8_t b = in_buf[i];
 
             crc = crc32_update(crc, b);
 
             // RUN state
             if (run_len >= 3) {
 
-                if (b == run_byte) {
+                if (b == run_byte && run_len < 128) {
                     run_len++;
-
-                    // flush full run
-                    if (run_len == 128) {
-                        rle_write_group_run(run_byte, run_len, fo);
-                        run_len = 0;
-                    }
-
                     continue;
+                } else {
+                    // finish run (or it is full)
+                    rle_write_group_run(run_byte, run_len, fo);
+                    run_len = 0;
                 }
-
-                // run ended -> write it
-                rle_write_group_run(run_byte, run_len, fo);
-                run_len = 0; // stop RUN state
-
-                // current byte becomes literal
-                literal_buffer[literal_len++] = b;
-                continue;
             }
 
-            // LITERAL state
-            literal_buffer[literal_len++] = b;
+            // LITERAL logic
+            lit_buf[lit_len++] = b;
 
-            // start of run (3 identical bytes)
-            if (literal_len >= 3 &&
-                literal_buffer[literal_len - 1] == literal_buffer[literal_len - 2] &&
-                literal_buffer[literal_len - 2] == literal_buffer[literal_len - 3]) {
+            // start of run if last 3 bytes of lit_buf are equal
+            if (lit_len >= 3 &&
+                lit_buf[lit_len - 1] == lit_buf[lit_len - 2] &&
+                lit_buf[lit_len - 2] == lit_buf[lit_len - 3]) {
 
-                size_t n = literal_len - 3;
-
-                // write literal bytes before RUN starts
-                if (n > 0) {
-                    rle_write_group_literal(literal_buffer, n, fo);
+                // write previous literal bytes if any
+                if (lit_len > 3) {
+                    rle_write_group_literal(lit_buf, lit_len - 3, fo);
                 }
-
-                literal_len = 0;
                 run_byte = b;
-                run_len = 3; // start RUN state
-                continue;
-            }
-
-            // flush literal if buffer full
-            if (literal_len == 128) {
-                rle_write_group_literal(literal_buffer, literal_len, fo);
-                literal_len = 0;
+                run_len = 3;
+                lit_len = 0;
+            } else if (lit_len == 128) {
+                rle_write_group_literal(lit_buf, 128, fo);
+                lit_len = 0;
             }
         }
     }
 
-    // flush remaining bytes at EOF
-    // if the status is RUN
+    // flush remaining bytes
     if (run_len >= 3) {
         rle_write_group_run(run_byte, run_len, fo);
-    } else if (literal_len > 0) {
-        // if the status is literal
-        rle_write_group_literal(literal_buffer, literal_len, fo);
+    } else if (lit_len > 0) {
+        rle_write_group_literal(lit_buf, lit_len, fo);
     }
 
     crc ^= 0xFFFFFFFF;
@@ -161,10 +122,7 @@ int rle_compress(const char *input_path, const char *output_path) {
     t.common.crc32 = crc;
     fwrite(&t, sizeof(t), 1, fo);
 
-    fclose(fi);
-    fclose(fo);
-
-    return 0;
+    return (run_err_t){.code = RUN_OK, .msg = NULL, .sys_errno = 0};
 }
 
 /**
@@ -179,75 +137,75 @@ int rle_compress(const char *input_path, const char *output_path) {
  *  3. Stop at the start of the trailer (after compressed data).
  *  4. Read the CRC32 from the trailer and compare it with the computed CRC32.
  */
-int rle_decompress(const char *input_path, const char *output_path) {
-    FILE *fi = fopen(input_path, "rb");
-    FILE *fo = fopen(output_path, "wb");
-    // Paths should already be validated, this is just a safety check
-    if (!fi || !fo)
-        return rle_cleanup_failed_output(fi, fo, output_path, "cannot open input or output file");
+// int rle_drcompress(FILE *fi, FILE *fo) {
+//     FILE *fi = fopen(input_path, "rb");
+//     FILE *fo = fopen(output_path, "wb");
+//     // Paths should already be validated, this is just a safety check
+//     if (!fi || !fo)
+//         return rle_cleanup_failed_output(fi, fo, output_path, "cannot open input or output file");
 
-    // Calculate the size of compressed data (without header and trailer)
-    fseek(fi, 0, SEEK_END);
-    long file_size = ftell(fi);
-    long compressed_data_size = file_size - sizeof(rle_header_t) - sizeof(rle_trailer_t);
-    fseek(fi, 0, SEEK_SET);
+//     // Calculate the size of compressed data (without header and trailer)
+//     fseek(fi, 0, SEEK_END);
+//     long file_size = ftell(fi);
+//     long compressed_data_size = file_size - sizeof(rle_header_t) - sizeof(rle_trailer_t);
+//     fseek(fi, 0, SEEK_SET);
 
-    // Read the header
-    rle_header_t h;
-    fread(&h, sizeof(h), 1, fi);
-    if (h.common.type != TYPE_RLE)
-        return rle_cleanup_failed_output(fi, fo, output_path, "Input file is not TYPE_RLE");
+//     // Read the header
+//     rle_header_t h;
+//     fread(&h, sizeof(h), 1, fi);
+//     if (h.common.type != TYPE_RLE)
+//         return rle_cleanup_failed_output(fi, fo, output_path, "Input file is not TYPE_RLE");
 
-    uint32_t crc_moving = 0xFFFFFFFF;
+//     uint32_t crc_moving = 0xFFFFFFFF;
 
-    uint8_t write_buf[128];
+//     uint8_t write_buf[128];
 
-    int bytes_read = 0;
+//     int bytes_read = 0;
 
-    while (bytes_read < compressed_data_size) {
-        int c = fgetc(fi);
-        if (c == EOF)
-            break;
-        bytes_read++;
+//     while (bytes_read < compressed_data_size) {
+//         int c = fgetc(fi);
+//         if (c == EOF)
+//             break;
+//         bytes_read++;
 
-        uint8_t count_byte = (uint8_t)c;
-        uint8_t count_value = (count_byte & 0b01111111) + 1;
+//         uint8_t count_byte = (uint8_t)c;
+//         uint8_t count_value = (count_byte & 0b01111111) + 1;
 
-        if (bytes_read + ((count_byte & 0b10000000) ? 1 : count_value) > compressed_data_size) {
-            return rle_cleanup_failed_output(fi, fo, output_path, "the input file is corrupted or invalid");
-        }
+//         if (bytes_read + ((count_byte & 0b10000000) ? 1 : count_value) > compressed_data_size) {
+//             return rle_cleanup_failed_output(fi, fo, output_path, "the input file is corrupted or invalid");
+//         }
 
-        // RUN
-        if (count_byte & 0b10000000) {
-            int run_byte = fgetc(fi);
-            if (run_byte == EOF)
-                return rle_cleanup_failed_output(fi, fo, output_path, "unexpected EOF while reading run byte");
-            bytes_read++;
-            memset(write_buf, run_byte, count_value);
-        } else { // LITERAL
-            if (fread(write_buf, 1, count_value, fi) != count_value)
-                return rle_cleanup_failed_output(fi, fo, output_path, "unexpected EOF while reading literal bytes");
-            bytes_read += count_value;
-        }
-        fwrite(write_buf, 1, count_value, fo);
-        crc_moving = crc32_update_from_buf(crc_moving, write_buf, count_value);
-    }
+//         // RUN
+//         if (count_byte & 0b10000000) {
+//             int run_byte = fgetc(fi);
+//             if (run_byte == EOF)
+//                 return rle_cleanup_failed_output(fi, fo, output_path, "unexpected EOF while reading run byte");
+//             bytes_read++;
+//             memset(write_buf, run_byte, count_value);
+//         } else { // LITERAL
+//             if (fread(write_buf, 1, count_value, fi) != count_value)
+//                 return rle_cleanup_failed_output(fi, fo, output_path, "unexpected EOF while reading literal bytes");
+//             bytes_read += count_value;
+//         }
+//         fwrite(write_buf, 1, count_value, fo);
+//         crc_moving = crc32_update_from_buf(crc_moving, write_buf, count_value);
+//     }
 
-    // here, the pointer is at the start of the trailer
-    crc_moving ^= 0xFFFFFFFF;
+//     // here, the pointer is at the start of the trailer
+//     crc_moving ^= 0xFFFFFFFF;
 
-    // read the calculated crc in the trailer
-    rle_trailer_t t;
-    fread(&t, sizeof(rle_trailer_t), 1, fi);
+//     // read the calculated crc in the trailer
+//     rle_trailer_t t;
+//     fread(&t, sizeof(rle_trailer_t), 1, fi);
 
-    // check that values are the same
-    if (crc_moving == t.common.crc32)
-        printf("Decompression completed successfully. You can check the output file: %s\n", output_path);
-    else
-        return rle_cleanup_failed_output(fi, fo, output_path,
-                                         "decompression failed: input file is corrupted or invalid");
+//     // check that values are the same
+//     if (crc_moving == t.common.crc32)
+//         printf("Decompression completed successfully. You can check the output file: %s\n", output_path);
+//     else
+//         return rle_cleanup_failed_output(fi, fo, output_path,
+//                                          "decompression failed: input file is corrupted or invalid");
 
-    fclose(fi);
-    fclose(fo);
-    return 0;
-}
+//     fclose(fi);
+//     fclose(fo);
+//     return 0;
+// }
