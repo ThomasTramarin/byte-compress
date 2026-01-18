@@ -46,7 +46,7 @@ void cli_print_error(const cli_err_t *err, const cli_ctx_t *ctx) {
     // TODO: expected message/did you mean
 
     // TODO: edit this message to support help with other subcommands commands
-    fprintf(stderr, "\nRun '%s --help' for more information.\n", ctx->argv[0]);
+    fprintf(stderr, "\nRun '%s help' for more information.\n", ctx->argv[0]);
 }
 
 // RUNTIME ERRORS

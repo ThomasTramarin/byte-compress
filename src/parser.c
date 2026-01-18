@@ -3,8 +3,8 @@
 #include "errors.h"
 #include <string.h>
 
-cli_cmd_t *resolve_command(cli_cmd_t *cmd, cli_ctx_t *ctx) {
-    cli_cmd_t *current = cmd;
+cli_err_t resolve_command(cli_cmd_t *root, cli_ctx_t *ctx, cli_cmd_t **out_cmd) {
+    cli_cmd_t *current = root;
 
     while (ctx->offset < ctx->argc) {
         char *arg = ctx->argv[ctx->offset];
@@ -12,27 +12,28 @@ cli_cmd_t *resolve_command(cli_cmd_t *cmd, cli_ctx_t *ctx) {
         if (arg[0] == '-')
             break;
 
-        if (current->subcommands_count == 0)
-            break;
-
-        int found = 0;
-
-        for (int i = 0; i < current->subcommands_count; i++) {
-            cli_cmd_t *sub = current->subcommands[i];
-
-            if (strcmp(arg, sub->name) == 0) {
-                current = sub;
-                ctx->offset++;
-                found = 1;
-                break;
+        if (current->subcommands_count > 0) {
+            int found = 0;
+            for (int i = 0; i < current->subcommands_count; i++) {
+                if (strcmp(arg, current->subcommands[i]->name) == 0) {
+                    current = current->subcommands[i];
+                    ctx->offset++;
+                    found = 1;
+                    break;
+                }
             }
-        }
 
-        if (!found)
+            if (!found) {
+                *out_cmd = current;
+                return (cli_err_t){.code = CLI_ERR_UNKNOWN_COMMAND, .arg = arg, .argv_idx = ctx->offset};
+            }
+        } else {
             break;
+        }
     }
 
-    return current;
+    *out_cmd = current;
+    return (cli_err_t){.code = CLI_OK};
 }
 
 static int is_choice_valid(const char *input, const char **choices, int count) {

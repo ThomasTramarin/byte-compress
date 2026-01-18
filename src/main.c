@@ -12,11 +12,19 @@ int main(int argc, char **argv) {
         .argc = argc,
         .argv = argv,
         .offset = 1,
+        .root_cmd = &bcomp_cmd,
     };
 
     init_crc_table();
 
-    cli_cmd_t *cmd = resolve_command(&bcomp_cmd, &ctx);
+    cli_cmd_t *cmd;
+
+    cli_err_t err = resolve_command(&bcomp_cmd, &ctx, &cmd);
+
+    if (err.code != CLI_OK) {
+        cli_print_error(&err, &ctx);
+        return 1;
+    }
 
     return cmd->run(&ctx);
 }

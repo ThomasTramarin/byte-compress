@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+extern cli_cmd_t bcomp_cmd;
+
 // ARGUMENTS
 static char *algorithm = NULL;
 static char *input = NULL;
@@ -18,18 +20,21 @@ static cli_opt_t compress_opt[] = {
         .short_name = 'i',
         .type = CLI_ARG_TYPE_STRING,
         .value = &input,
+        .description = "Path to the input file (stdin if not specified).",
     },
     {
         .long_name = "output",
         .short_name = 'o',
         .type = CLI_ARG_TYPE_STRING,
         .value = &output,
+        .description = "Path to the output file (<input>.bcomp if not specified).",
     },
     {
         .long_name = "stdout",
         .short_name = 'c',
         .type = CLI_ARG_TYPE_BOOL,
         .value = &to_stdout,
+        .description = "Write output to stdout instead of a file. Overrides the --output flag.",
     },
 };
 
@@ -37,19 +42,18 @@ static cli_opt_t compress_opt[] = {
 static const char *compress_pos_choices[] = {"rle"};
 
 static cli_pos_t compress_pos[] = {
-    {.name = "algorithm",
-     .type = CLI_ARG_TYPE_STRING,
-     .value = &algorithm,
-     .flags = CLI_ARG_FLAG_REQUIRED,
-     .choices = compress_pos_choices,
-     .choices_count = ARR_SIZE(compress_pos_choices)},
+    {
+        .name = "algorithm",
+        .type = CLI_ARG_TYPE_STRING,
+        .value = &algorithm,
+        .flags = CLI_ARG_FLAG_REQUIRED,
+        .choices = compress_pos_choices,
+        .choices_count = ARR_SIZE(compress_pos_choices),
+        .description = "Compression algorithm to use.",
+    },
 };
 
 int compress_run(cli_ctx_t *ctx);
-
-void compress_cmd_help() {
-    printf("usage: bcomp compress <algorithm> [options]\n");
-}
 
 cli_cmd_t compress_cmd = {
     .name = "compress",
@@ -58,7 +62,10 @@ cli_cmd_t compress_cmd = {
     .positionals = compress_pos,
     .positional_count = ARR_SIZE(compress_pos),
     .run = compress_run,
-    .help = compress_cmd_help,
+    .description = "Compress data using the specified algorithm. "
+                   "Supports streaming from stdin and automatic output naming. "
+                   "Use '-c' to pipe the result directly to other tools.",
+    .parent = &bcomp_cmd,
 };
 
 int compress_run(cli_ctx_t *ctx) {
@@ -110,7 +117,7 @@ int compress_run(cli_ctx_t *ctx) {
         res = rle_compress(ip, op);
     }
 
-    // close files (only != stdin/stdout)
+    // close files (only if they are not stdin/stdout)
     if (ip && ip != stdin)
         fclose(ip);
     if (op && op != stdout)

@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 extern cli_cmd_t compress_cmd;
+extern cli_cmd_t help_cmd;
 
 static cli_opt_t bcomp_cmd_options[] = {
 
@@ -9,6 +10,7 @@ static cli_opt_t bcomp_cmd_options[] = {
 
 static cli_cmd_t *bcomp_cmd_subcommands[] = {
     &compress_cmd,
+    &help_cmd,
 };
 
 void bcomp_cmd_help() {
@@ -26,6 +28,7 @@ cli_cmd_t bcomp_cmd = {
     .option_count = sizeof(bcomp_cmd_options) / sizeof(bcomp_cmd_options[0]),
     .subcommands = bcomp_cmd_subcommands,
     .subcommands_count = sizeof(bcomp_cmd_subcommands) / sizeof(bcomp_cmd_subcommands[0]),
+    .description = "bcomp is a command-line interface program for data compression.",
     .run = bcomp_cmd_run,
-    .help = bcomp_cmd_help,
+    .parent = NULL,
 };

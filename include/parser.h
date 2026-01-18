@@ -22,6 +22,8 @@ typedef struct {
 
     const char **choices;
     int choices_count;
+
+    const char *description;
 } cli_opt_t;
 
 typedef struct {
@@ -32,23 +34,31 @@ typedef struct {
 
     const char **choices;
     int choices_count;
+
+    const char *description;
 } cli_pos_t;
 
 typedef struct cli_cmd_t cli_cmd_t;
 
 struct cli_cmd_t {
     const char *name;
+    char *description;
+
     cli_opt_t *options;
     int option_count;
+
     cli_cmd_t **subcommands;
     int subcommands_count;
+
     cli_pos_t *positionals;
     int positional_count;
+
     int (*run)(cli_ctx_t *ctx);
-    void (*help)(void);
+
+    cli_cmd_t *parent;
 };
 
-cli_cmd_t *resolve_command(cli_cmd_t *cmd, cli_ctx_t *ctx);
+cli_err_t resolve_command(cli_cmd_t *root, cli_ctx_t *ctx, cli_cmd_t **out_cmd);
 cli_err_t parse_arguments(cli_cmd_t *cmd, cli_ctx_t *ctx);
 
 #endif
