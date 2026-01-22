@@ -5,10 +5,11 @@
 
 #define POLYNOMIAL 0xEDB88320
 
-extern uint32_t crc_32_table[256];
+typedef uint32_t crc32_t;
 
-void init_crc_table();
-uint32_t crc32_update(uint32_t crc, uint8_t b);
-uint32_t crc32_update_from_buf(uint32_t crc, const uint8_t *data, size_t len);
+crc32_t crc32_init();
+crc32_t crc32_update_byte(crc32_t crc, uint8_t b);
+crc32_t crc32_update_buf(crc32_t crc, const void *data, size_t len);
+crc32_t crc32_finalize(crc32_t crc);
 
 #endif
