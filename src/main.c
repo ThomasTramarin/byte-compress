@@ -15,8 +15,6 @@ int main(int argc, char **argv) {
         .root_cmd = &bcomp_cmd,
     };
 
-    init_crc_table();
-
     cli_cmd_t *cmd;
 
     cli_err_t err = resolve_command(&bcomp_cmd, &ctx, &cmd);

@@ -56,6 +56,8 @@ const char *run_err_code_to_string(run_err_code_t code) {
         return "success";
     case RUN_ERR_IO:
         return "I/O error";
+    case RUN_ERR_BUF_OVERFLOW:
+        return "buffer overflow error";
     default:
         return "unknown runtime error";
     }

@@ -1,6 +1,7 @@
 #ifndef BCFF_H
 #define BCFF_H
 #include <stdint.h>
+#include <stdio.h>
 
 /**
  * BCFF (BComp File Format)
@@ -11,6 +12,12 @@
  *  - All multi-byte integer fields are stored in big-endian
  *  - C structs must not be written directly to disk (use wrapper function instead)
  */
+
+/**
+ * Progressive format number versioning
+ */
+#define BCFF_VERSION_V1 0x01
+#define BCFF_CURRENT_VERSION BCFF_VERSION_V1
 
 /**
  * Compression algorithm identifiers.
@@ -75,7 +82,7 @@ typedef struct {
     uint16_t flags;
     /**< Global format flags (BCFF_FLAG_*) */
 
-    uint16_t crc32;
+    uint32_t crc32;
     /**< CRC-32 of the global header fields execpt of this field */
 } bcff_header_t;
 
@@ -85,6 +92,8 @@ typedef struct {
  * Indicates this is the last frame in the stream.
  */
 #define BCFF_FRAME_FLAG_LAST 0x01
+
+#define BCFF_FRAME_MAX_SIZE 64536
 
 /**
  * BCFF Frame Header
@@ -97,15 +106,11 @@ typedef struct {
     uint8_t magic[2];
     /**< ASCII string "FH" */
 
-    uint8_t last_byte_bits;
-    /**< Number of valid bits in the last byte of the compressed data.
-     * Values: 1 to 8.
-     * If compressed_size > 0 a value of 8 means the last byte is full.
-     * If compressed_size == 0, this value should be 0
-     */
-
     uint8_t flags;
     /**< Frame specific flags (BCFF_FRAME_FLAG_*) */
+
+    uint8_t last_byte_bits;
+    /**< Number of valid bits in the last byte of the compressed data. */
 
     uint32_t uncompressed_size;
     /**< The size of the data after decompression. */
@@ -115,7 +120,7 @@ typedef struct {
 
     uint32_t crc32;
     /**< CRC-32 checksum calculated of header fields (except of crc32) and compressed payload. */
-} bcff_frame_header;
+} bcff_frame_header_t;
 
 /**
  * BCFF Trailer
@@ -124,8 +129,13 @@ typedef struct {
     uint8_t magic[4];
     /**< ASCII string "BEND" (Bcomp END) */
 
-    uint32_t global_crc32;
+    uint32_t crc32;
     /**< CRC-32 of the entire uncompressed data sequence */
 } bcff_trailer_t;
+
+// --- Functions ---
+void write_bcff_header(bcff_header_t *h, FILE *f);
+void write_bcff_frame_header(bcff_frame_header_t *h, const uint8_t *payload, FILE *f);
+void write_bcff_trailer(bcff_trailer_t *h, FILE *f);
 
 #endif

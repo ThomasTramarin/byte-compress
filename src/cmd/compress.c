@@ -1,5 +1,6 @@
+#include "bcff.h"
+#include "bcomp_core.h"
 #include "parser.h"
-#include "rle.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -111,10 +112,19 @@ int compress_run(cli_ctx_t *ctx) {
         return 1;
     }
 
-    run_err_t res = {0};
-    // dispatch algorithm to run
+    // determine the algorithm
+    uint8_t algo_id;
     if (strcmp(algorithm, "rle") == 0) {
-        res = rle_compress(ip, op);
+        algo_id = BCFF_ALGO_RLE;
+    }
+
+    run_err_t res = {0};
+
+    res = compress_engine(ip, op, algo_id);
+
+    if (res.code != RUN_OK) {
+        run_print_error(&res);
+        return 1;
     }
 
     // close files (only if they are not stdin/stdout)

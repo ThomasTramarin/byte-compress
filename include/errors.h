@@ -33,6 +33,7 @@ void cli_print_error(const cli_err_t *err, const cli_ctx_t *ctx);
 typedef enum {
     RUN_OK = 0,
     RUN_ERR_IO,
+    RUN_ERR_BUF_OVERFLOW,
 } run_err_code_t;
 
 typedef struct {

@@ -1,35 +1,45 @@
-#include "rle.h"
+#include "bcomp_core.h"
 #include "crc.h"
 #include "errors.h"
 #include <string.h>
 
-#define BLOCK_SIZE 4096
-
 /**
- * Write a run block to the file.
+ * Write a run block
  *
  * Format:
  * - 1 byte: MSB = 1 (flag run), lower 7 bits = count - 1 (range 1..128)
  * - 1 byte: the byte to repeat
  */
-static void rle_write_group_run(uint8_t byte, uint8_t count, FILE *fp) {
-    uint8_t group[2];
-    group[1] = byte;
-    group[0] = count - 1;
-    group[0] |= 0b10000000; // set the first bit to 1
-    fwrite(group, 1, 2, fp);
+static run_err_t rle_write_group_run(uint8_t byte, uint8_t count, uint8_t *out, size_t *out_idx, size_t out_cap) {
+    // a RUN block is always 2 bytes long
+    if (*out_idx + 2 > out_cap) {
+        return (run_err_t){.code = RUN_ERR_BUF_OVERFLOW, .msg = "output buffer too small"};
+    }
+
+    out[(*out_idx)++] = (count - 1) | 0x80; // set the MSB to 1
+    out[(*out_idx)++] = byte;
+
+    return (run_err_t){.code = RUN_OK};
 }
 
 /**
- * Write a literal block (non-repeated bytes) to the file.
+ * Write a literal block
  *
  * Format:
  * - 1 byte: MSB = 0 (flag literal), lower 7 bits = count - 1 (range 1..128)
  * - N bytes: the literal bytes
  */
-static void rle_write_group_literal(uint8_t not_compressed[], uint8_t count, FILE *fp) {
-    fputc(count - 1, fp);
-    fwrite(not_compressed, 1, count, fp);
+static run_err_t rle_write_group_literal(uint8_t *lits, uint8_t count, uint8_t *out, size_t *out_idx, size_t out_cap) {
+    // LITERAL block: 1 byte (header) + N byte
+    if (*out_idx + 1 + count > out_cap) {
+        return (run_err_t){.code = RUN_ERR_BUF_OVERFLOW, .msg = "output buffer too small"};
+    }
+
+    out[(*out_idx)++] = (count - 1); // MSB = 0
+    memcpy(&out[*out_idx], lits, count);
+    *out_idx += count;
+
+    return (run_err_t){.code = RUN_OK};
 }
 
 /**
@@ -44,85 +54,79 @@ static void rle_write_group_literal(uint8_t not_compressed[], uint8_t count, FIL
  *  3. Write the run until the byte changes or maximum length is reached (128)
  *  4. Repeat until EOF
  *  5. Update CRC32 during writing and append a trailer at the end.
- */
-run_err_t rle_compress(FILE *fi, FILE *fo) {
-    if (!fi)
-        return (run_err_t){.code = RUN_ERR_IO, .msg = "input file pointer is NULL", .sys_errno = errno};
+//  */
+run_err_t rle_compress(
+    const uint8_t *in_buf, size_t in_size,
+    uint8_t *out_buf, size_t out_cap, compress_result_t *res) {
 
-    if (!fo)
-        return (run_err_t){.code = RUN_ERR_IO, .msg = "output file pointer is NULL", .sys_errno = errno};
-
-    // Write rle header (1 byte)
-    rle_header_t h;
-    h.common.type = TYPE_RLE;
-    fwrite(&h, sizeof(h), 1, fo);
-
-    uint32_t crc = 0xFFFFFFFF;
-
-    uint8_t in_buf[BLOCK_SIZE]; // read buffer
-    size_t read;                // the number of bytes read in the current block
-    uint8_t lit_buf[128];       // accumulate literal bytes
+    size_t in_idx = 0;
+    size_t out_idx = 0;
+    uint8_t lit_buf[128];
     size_t lit_len = 0;
-    uint8_t run_byte;
+    uint8_t run_byte = 0;
     size_t run_len = 0;
+    run_err_t err;
 
-    // read block by block
-    while ((read = fread(in_buf, 1, BLOCK_SIZE, fi)) > 0) {
-        for (size_t i = 0; i < read; i++) {
-            uint8_t b = in_buf[i];
+    // iterate over each byte of the input
+    for (in_idx = 0; in_idx < in_size; in_idx++) {
+        uint8_t b = in_buf[in_idx];
 
-            crc = crc32_update(crc, b);
+        // RUN state
+        if (run_len >= 3) {
 
-            // RUN state
-            if (run_len >= 3) {
-
-                if (b == run_byte && run_len < 128) {
-                    run_len++;
-                    continue;
-                } else {
-                    // finish run (or it is full)
-                    rle_write_group_run(run_byte, run_len, fo);
-                    run_len = 0;
-                }
+            if (b == run_byte && run_len < 128) {
+                run_len++;
+                continue;
+            } else {
+                // finish run (or it is full)
+                err = rle_write_group_run(run_byte, run_len, out_buf, &out_idx, out_cap);
+                if (err.code != RUN_OK)
+                    return err;
+                run_len = 0;
             }
+        }
 
-            // LITERAL logic
-            lit_buf[lit_len++] = b;
+        // LITERAL logic
+        lit_buf[lit_len++] = b;
 
-            // start of run if last 3 bytes of lit_buf are equal
-            if (lit_len >= 3 &&
-                lit_buf[lit_len - 1] == lit_buf[lit_len - 2] &&
-                lit_buf[lit_len - 2] == lit_buf[lit_len - 3]) {
+        // start of run if last 3 bytes of lit_buf are equal
+        if (lit_len >= 3 &&
+            lit_buf[lit_len - 1] == lit_buf[lit_len - 2] &&
+            lit_buf[lit_len - 2] == lit_buf[lit_len - 3]) {
 
-                // write previous literal bytes if any
-                if (lit_len > 3) {
-                    rle_write_group_literal(lit_buf, lit_len - 3, fo);
-                }
-                run_byte = b;
-                run_len = 3;
-                lit_len = 0;
-            } else if (lit_len == 128) {
-                rle_write_group_literal(lit_buf, 128, fo);
-                lit_len = 0;
+            // write previous literal bytes if any
+            if (lit_len > 3) {
+                err = rle_write_group_literal(lit_buf, lit_len - 3, out_buf, &out_idx, out_cap);
+                if (err.code != RUN_OK)
+                    return err;
             }
+            run_byte = b;
+            run_len = 3;
+            lit_len = 0;
+        } else if (lit_len == 128) {
+            err = rle_write_group_literal(lit_buf, 128, out_buf, &out_idx, out_cap);
+            if (err.code != RUN_OK)
+                return err;
+            lit_len = 0;
         }
     }
 
     // flush remaining bytes
     if (run_len >= 3) {
-        rle_write_group_run(run_byte, run_len, fo);
+        err = rle_write_group_run(run_byte, run_len, out_buf, &out_idx, out_cap);
+        if (err.code != RUN_OK)
+            return err;
     } else if (lit_len > 0) {
-        rle_write_group_literal(lit_buf, lit_len, fo);
+        err = rle_write_group_literal(lit_buf, lit_len, out_buf, &out_idx, out_cap);
+        if (err.code != RUN_OK)
+            return err;
     }
 
-    crc ^= 0xFFFFFFFF;
+    res->out_written = out_idx;
+    res->in_consumed = in_idx;
+    res->last_byte_bits = 8; // RLE works with full bytes
 
-    // write the trailer
-    rle_trailer_t t;
-    t.common.crc32 = crc;
-    fwrite(&t, sizeof(t), 1, fo);
-
-    return (run_err_t){.code = RUN_OK, .msg = NULL, .sys_errno = 0};
+    return (run_err_t){.code = RUN_OK};
 }
 
 /**
