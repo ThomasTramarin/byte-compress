@@ -1,4 +1,4 @@
-#include "bcff.h"
+#include "bcf.h"
 #include "bcomp_core.h"
 #include "helpers.h"
 #include "parser.h"
@@ -148,7 +148,7 @@ int compress_run(cli_ctx_t *ctx) {
     // determine the algorithm
     uint8_t algo_id;
     if (strcmp(algorithm, "rle") == 0) {
-        algo_id = BCFF_ALGO_RLE;
+        algo_id = BCF_ALGO_RLE;
     }
 
     r_err = compress_engine(ip, op, algo_id);

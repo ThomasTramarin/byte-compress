@@ -1,14 +1,14 @@
 #ifndef BCOMP_CORE_H
 #define BCOMP_CORE_H
 
-#include "bcff.h"
+#include "bcf.h"
 #include "errors.h"
 #include <stdint.h>
 #include <stdio.h>
 
 typedef struct {
     uint32_t global_crc;
-    /**< CRC of the entire stream (original data), will be written at the end of the stream (bcff_trailer) */
+    /**< CRC of the entire stream (original data), will be written at the end of the stream (bcf_trailer) */
 } compress_ctx_t;
 
 typedef struct {
