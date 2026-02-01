@@ -1,8 +1,8 @@
 #ifndef PARSER_H
 #define PARSER_H
 #include "cli.h"
-#include "errors.h"
-#include "helpers.h"
+#include "cli_error.h"
+#include "cli_helpers.h"
 #include <stdint.h>
 
 #define CLI_ARG_FLAG_REQUIRED 0x01

@@ -1,5 +1,5 @@
 #include "cli.h"
-#include "errors.h"
+#include "cli_error.h"
 #include "parser.h"
 #include <stdio.h>
 #include <string.h>

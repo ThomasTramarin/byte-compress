@@ -1,6 +1,6 @@
 #include "parser.h"
 #include "cli.h"
-#include "errors.h"
+#include "cli_error.h"
 #include <string.h>
 
 cli_err_t resolve_command(cli_cmd_t *root, cli_ctx_t *ctx, cli_cmd_t **out_cmd) {

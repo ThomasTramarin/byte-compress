@@ -1,19 +1,5 @@
-#include "helpers.h"
+#include "core_helpers.h"
 #include <stdint.h>
-
-#ifdef _WIN32
-#include <io.h>
-#ifndef F_OK
-#define F_OK 0
-#endif
-#define ACCESS _access
-
-#else
-
-#include <unistd.h>
-#define ACCESS access
-
-#endif
 
 /**
  * Converts a 32-bit unsigned integer to a Big-Endian byte order.
@@ -61,10 +47,4 @@ void to_be16(uint8_t *buf, uint16_t val) {
 uint16_t from_be16(const uint8_t *buf) {
     return ((uint16_t)buf[0] << 8) |
            ((uint16_t)buf[1]);
-}
-
-int file_exists(const char *path) {
-    if (path == NULL)
-        return 0;
-    return ACCESS(path, F_OK) == 0;
 }

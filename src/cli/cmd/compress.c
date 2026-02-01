@@ -1,6 +1,4 @@
-#include "bcf.h"
-#include "bcomp_core.h"
-#include "helpers.h"
+#include "cli_helpers.h"
 #include "parser.h"
 #include <stdio.h>
 #include <string.h>
@@ -90,16 +88,16 @@ int compress_run(cli_ctx_t *ctx) {
     FILE *op = NULL;
     char auto_output[256];
     const char *final_output_path = NULL;
-    run_err_t r_err = {.code = RUN_OK, .msg = NULL, .sys_errno = 0};
+    // run_err_t r_err = {.code = RUN_OK, .msg = NULL, .sys_errno = 0};
 
     // open input
     if (input != NULL) {
         ip = fopen(input, "rb");
         if (ip == NULL) {
-            r_err.code = RUN_ERR_IO;
-            r_err.msg = "failed to open input file";
-            r_err.sys_errno = errno;
-            run_print_error(&r_err);
+            //     r_err.code = RUN_ERR_IO;
+            //     r_err.msg = "failed to open input file";
+            //     r_err.sys_errno = errno;
+            //     run_print_error(&r_err);
             return 1;
         }
     } else {
@@ -120,12 +118,12 @@ int compress_run(cli_ctx_t *ctx) {
 
     // check if the output file already exists
     if (final_output_path != NULL && !force && file_exists(final_output_path)) {
-        r_err.code = RUN_ERR_IO;
-        r_err.msg = "output file already exists (use --force to overwrite)";
-        r_err.sys_errno = EEXIST;
-        run_print_error(&r_err);
-        if (ip != stdin)
-            fclose(ip);
+        // r_err.code = RUN_ERR_IO;
+        // r_err.msg = "output file already exists (use --force to overwrite)";
+        // r_err.sys_errno = EEXIST;
+        // run_print_error(&r_err);
+        // if (ip != stdin)
+        //     fclose(ip);
         return 1;
     }
 
@@ -135,12 +133,12 @@ int compress_run(cli_ctx_t *ctx) {
     } else {
         op = fopen(final_output_path, "wb");
         if (op == NULL) {
-            r_err.code = RUN_ERR_IO;
-            r_err.msg = "failed to open output file";
-            r_err.sys_errno = errno;
-            run_print_error(&r_err);
-            if (ip != stdin)
-                fclose(ip);
+            // r_err.code = RUN_ERR_IO;
+            // r_err.msg = "failed to open output file";
+            // r_err.sys_errno = errno;
+            // run_print_error(&r_err);
+            // if (ip != stdin)
+            //     fclose(ip);
             return 1;
         }
     }
@@ -148,21 +146,21 @@ int compress_run(cli_ctx_t *ctx) {
     // determine the algorithm
     uint8_t algo_id;
     if (strcmp(algorithm, "rle") == 0) {
-        algo_id = BCF_ALGO_RLE;
+        // algo_id = BCF_ALGO_RLE;
     }
 
-    r_err = compress_engine(ip, op, algo_id);
+    // r_err = compress_engine(ip, op, algo_id);
 
-    if (r_err.code != RUN_OK) {
-        run_print_error(&r_err);
-        return 1;
-    }
+    // if (r_err.code != RUN_OK) {
+    // run_print_error(&r_err);
+    return 1;
+    // }
 
     // close files (only if they are not stdin/stdout)
-    if (ip && ip != stdin)
-        fclose(ip);
-    if (op && op != stdout)
-        fclose(op);
+    // if (ip && ip != stdin)
+    //     fclose(ip);
+    // if (op && op != stdout)
+    //     fclose(op);
 
     return 0;
 }
