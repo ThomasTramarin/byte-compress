@@ -1,11 +1,20 @@
 #include "parser.h"
+#include "version.h"
 #include <stdio.h>
 
 extern cli_cmd_t compress_cmd;
 extern cli_cmd_t help_cmd;
 
-static cli_opt_t bcomp_cmd_options[] = {
+static int display_version;
 
+static cli_opt_t bcomp_cmd_options[] = {
+    {
+        .long_name = "version",
+        .short_name = 'v',
+        .type = CLI_ARG_TYPE_BOOL,
+        .description = "Display Bcomp versions",
+        .value = &display_version,
+    },
 };
 
 static cli_cmd_t *bcomp_cmd_subcommands[] = {
@@ -13,12 +22,18 @@ static cli_cmd_t *bcomp_cmd_subcommands[] = {
     &help_cmd,
 };
 
-void bcomp_cmd_help() {
-    printf("usage: bcomp <cmd> [options]\n");
-}
-
 int bcomp_cmd_run(cli_ctx_t *ctx) {
-    bcomp_cmd_help();
+    if (display_version) {
+        printf("bcomp-cli %d.%d.%d (core: %d.%d.%d, format: %d.%d.%d)\n",
+               BCOMP_VER_CLI_MAJOR, BCOMP_VER_CLI_MINOR, BCOMP_VER_CLI_PATCH,
+               BCOMP_VER_CORE_MAJOR, BCOMP_VER_CORE_MINOR, BCOMP_VER_CORE_PATCH,
+               BCOMP_VER_FORMAT_MAJOR, BCOMP_VER_FORMAT_MINOR, BCOMP_VER_FORMAT_PATCH);
+
+        return 0;
+    }
+
+    fprintf(stderr, "bcomp: missing command\nTry 'bcomp help' for more information.\n");
+
     return 0;
 }
 
