@@ -1,141 +1,115 @@
 #ifndef BCF_H
 #define BCF_H
+
+#include "bcomp.h"
+#include "version.h"
 #include <stdint.h>
 #include <stdio.h>
 
 /**
  * BCF (BComp Format)
+ * ----------------------------------------------------------------------------
+ * Data Layout: [Global Header] + [Block 0] + ... + [Block N] + [Global Trailer]
  *
- * This file defines the core structures used for compressed data storage and streaming.
- *
- * Rules:
- *  - All multi-byte integer fields are stored in big-endian
- *  - C structs must not be written directly to disk (use wrapper function instead)
+ * * DESIGN RULES:
+ * 1. Structures are 8-byte aligned (multiples of 8).
+ * 2. Little-Endian byte order for multi-byte fields.
+ * 3. Each block is self-contained
+ * 4. The format allows decompression without seeking (streaming)
  */
 
-/**
- * Progressive format number versioning
- */
-#define BCF_VERSION_V1 0x01
-#define BCF_CURRENT_VERSION BCF_VERSION_V1
+/* --- Magic Signatures --- */
+#define BCF_MAGIC "BCF!"
+#define BCF_BLOCK_MAGIC "BLK"
+
+/* --- Block Types ---*/
+#define BCF_BLOCK_DATA 0x01
+#define BCF_BLOCK_TRAILER 0xFF
+
+/* --- Algorithm Identifiers --- */
+#define BCF_ALGO_RAW BCOMP_ALGO_RAW
+#define BCF_ALGO_RLE BCOMP_ALGO_RLE
 
 /**
- * Compression algorithm identifiers.
- * The algorithm type is stored in the BCF header.
+ * GLOBAL HEADER
  *
- * The type starts from 1.
- */
-#define BCF_ALGO_RLE 0x01
-
-/**
- * BCF_FLAG_STREAMING
- *
- * Indicates that the compressed data is produced from a streaming source (e.g. stdin, pipe, socket).
- *
- * This flag is not set when input is a regular file
- */
-#define BCF_FLAG_STREAMING 0x0001
-
-/**
- * BCF_FLAG_METADATA
- *
- *
- * Indicates that file metadata blocks are present in the stream.
- *
- * Metadata blocks may include information such as:
- *  - original file or directory name
- *  - timestamps
- *  - permissions
- *  - directory structure information
- *
- * When this flag is set, the compressed stream contains metadata
- * to reconstruct files and directories during decompression.
- *
- * When this flag is not set, the stream represents raw data only, with
- * no associated filesystem metadata.
- *
- * This flag is typically required when compressing multiple files or
- * directories, as metadata is needed to rebuild the original structure.
- *
- * @note Current version of bcomp do not store metadata blocks.
- *       This flag is reserved for future use.
- */
-
-#define BCF_FLAG_METADATA 0x0002
-
-/**
- * The main header of a BCF compressed file or stream.
- *
- * This header is always written at the beginning of the compressed stream
- * and contains information to interpret the data.
+ * Total size: 16 bytes
  */
 typedef struct {
     uint8_t magic[4];
-    /**< ASCII string "BCF", used to identify the file format */
+    /**< ASCII string "BCF!", used to identify the file format */
 
-    uint8_t version;
-    /**< BCF format version */
+    uint8_t ver_major; /**< From BCOMP_VER_FORMAT_MAJOR */
+    uint8_t ver_minor; /**< From BCOMP_VER_FORMAT_MINOR */
+    uint8_t ver_patch; /**< From BCOMP_VER_FORMAT_PATCH */
 
-    uint8_t algorithm;
-    /**< Compression algorithm identifier (BCF_ALGO_*) */
+    uint8_t reserved[5];
 
-    uint16_t flags;
-    /**< Global format flags (BCF_FLAG_*) */
-
-    uint32_t crc32;
-    /**< CRC-32 of the global header fields execpt of this field */
+    uint32_t header_crc;
+    /**< CRC of the global header*/
+    
 } bcf_header_t;
 
 /**
- * BCF_FRAME_FLAG_LAST
+ * BLOCK HEADER
  *
- * Indicates this is the last frame in the stream.
- */
-#define BCF_FRAME_FLAG_LAST 0x01
-
-#define BCF_FRAME_MAX_SIZE 64536
-
-/**
- * BCF Frame Header
- * A BCF compressed stream contains a sequence of one or more frames.
- *
- * Each Frame is independent, meaning that each new frame resets the
- * compression context.
+ * Common header for every chunk of data.
+ * Total size: 24 bytes
  */
 typedef struct {
-    uint8_t magic[2];
-    /**< ASCII string "FH" */
+    uint8_t magic[3];
+    /**< ASCII string "BLK" */
 
-    uint8_t flags;
-    /**< Frame specific flags (BCF_FRAME_FLAG_*) */
+    uint8_t type;
+    /**< BCF_BLOCK_* */
 
-    uint8_t last_byte_bits;
-    /**< Number of valid bits in the last byte of the compressed data. */
+    uint32_t n_block;
+    /**< Sequential block identifier */
 
-    uint32_t uncompressed_size;
-    /**< The size of the data after decompression. */
+    uint32_t payload_len;
+    /**< Length of the payload FOLLOWING this header */
 
-    uint32_t compressed_size;
-    /**< The size of the data stored in this frame (payload only).*/
+    uint8_t reserved[4];
 
-    uint32_t crc32;
-    /**< CRC-32 checksum calculated of header fields (except of crc32) and compressed payload. */
-} bcf_frame_header_t;
+    uint32_t payload_crc;
+    /**< CRC of the entire payload (next payload_len bytes) */
+    
+    uint32_t header_crc;
+    /**< Integrity check for the header itself. */
+    
+} bcf_block_header_t;
 
 /**
- * BCF Trailer
+ * DATA PAYLOAD HEADER
+ *
+ * Total size: 16 bytes
+ */
+
+typedef struct {
+    uint8_t algo; // BCF_ALGO_*
+    uint8_t reserved[3];
+    uint32_t original_size;
+    uint32_t original_crc; // CRC of the original payload
+} bcf_data_block_header_t;
+
+/**
+ * RLE DATA BLOCK HEADER
+ *
+ * Size: 8 bytes
  */
 typedef struct {
-    uint8_t magic[4];
-    /**< ASCII string "BEND" (Bcomp END) */
+    uint8_t reserved;
+} bcf_data_block_rle_header_t;
 
-    uint32_t crc32;
-    /**< CRC-32 of the entire uncompressed data sequence */
-} bcf_trailer_t;
-
-// --- Functions ---
-void write_bcf_header(bcf_header_t *h, FILE *f);
-void write_bcf_frame_header(bcf_frame_header_t *h, const uint8_t *payload, FILE *f);
-void write_bcf_trailer(bcf_trailer_t *h, FILE *f);
+/**
+ * TRAILER BLOCK
+ *
+ * Size: 8 bytes
+ */
+typedef struct {
+    uint32_t total_blocks;
+    uint8_t reserved[4];
+    uint64_t total_size;
+} bcf_trailer_payload_t;
 
 #endif
