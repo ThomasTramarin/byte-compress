@@ -11,11 +11,9 @@
  * Tracks the binary layout of the .bcf files.
  * - MAJOR: Breaking changes. Old software CANNOT read new files.
  * - MINOR: New features (e.g., new block types) that are backwards compatible.
- * - PATCH: Minor tweaks.
  */
 #define BCOMP_VER_FORMAT_MAJOR 1
 #define BCOMP_VER_FORMAT_MINOR 0
-#define BCOMP_VER_FORMAT_PATCH 0
 
 /* CORE ENGINE VERSION (Library Logic)
  *

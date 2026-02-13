@@ -24,10 +24,10 @@ static cli_cmd_t *bcomp_cmd_subcommands[] = {
 
 int bcomp_cmd_run(cli_ctx_t *ctx) {
     if (display_version) {
-        printf("bcomp-cli %d.%d.%d (core: %d.%d.%d, format: %d.%d.%d)\n",
+        printf("bcomp-cli %d.%d.%d (core: %d.%d.%d, format: %d.%d)\n",
                BCOMP_VER_CLI_MAJOR, BCOMP_VER_CLI_MINOR, BCOMP_VER_CLI_PATCH,
                BCOMP_VER_CORE_MAJOR, BCOMP_VER_CORE_MINOR, BCOMP_VER_CORE_PATCH,
-               BCOMP_VER_FORMAT_MAJOR, BCOMP_VER_FORMAT_MINOR, BCOMP_VER_FORMAT_PATCH);
+               BCOMP_VER_FORMAT_MAJOR, BCOMP_VER_FORMAT_MINOR);
 
         return 0;
     }
