@@ -1,7 +1,18 @@
-#include "crc.h"
-#include <stdint.h>
-#include <stdlib.h>
+/**
+ * @file crc.c
+ * @brief Implementation of the CRC-32 standard (IEEE 802.3).
+ * * Parameters:
+ * - Polynomial: 0xEDB88320 (Reflected)
+ * - Initial Value: 0xFFFFFFFF
+ * - Final XOR: 0xFFFFFFFF
+ * - Reflection: True (Both Input & Output)
+ */
 
+#include "crc.h"
+
+/**
+ * @brief Precomputed lookup table for the 0xEDB88320 polynomial.
+ */
 uint32_t crc_32_table[256] = {
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
     0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
@@ -36,14 +47,23 @@ uint32_t crc_32_table[256] = {
     0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
     0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d};
 
+/**
+ * @brief Initializes the CRC state to the initial value (0xFFFFFFFF)
+ */
 crc32_t crc32_init() {
     return 0xFFFFFFFF;
 }
 
+/**
+ * @brief Updates the CRC state with a single byte
+ */
 crc32_t crc32_update_byte(crc32_t crc, uint8_t b) {
     return (crc >> 8) ^ crc_32_table[(crc ^ b) & 0xFF];
 }
 
+/**
+ * @brief Processes a buffer of data to update the CRC state.
+ */
 crc32_t crc32_update_buf(crc32_t crc, const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     for (size_t i = 0; i < len; i++) {
@@ -52,6 +72,9 @@ crc32_t crc32_update_buf(crc32_t crc, const void *data, size_t len) {
     return crc;
 }
 
+/**
+ * @brief Applies the final XOR to the CRC state.
+ */
 crc32_t crc32_finalize(crc32_t crc) {
     return ~crc;
 }

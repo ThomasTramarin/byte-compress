@@ -1,0 +1,65 @@
+#+TITLE: BComp Format (BCF) Specification
+#+VERSION: 1.0
+
+* Overview
+BComp Format is a binary container created for the **bcomp** compression tool.
+It is a stream-oriented format designed to encapsulate compressed data within a multi-layered architecture.
+
+* Format Design
+- **Endianness**: All multi-byte integers are written in the Little-Endian format. Implementations 
+  on Big-Endian architectures must perform byte-swapping during read/write operations.
+- **Encapsulation**: Clear separation between data transport and logic.
+- **Data Integrity**: Independent error detection for both header and data segments.
+
+* Data Integrity Details
+- **Algorithm**: CRC-32 (IEEE 802.3 Standard)
+- **Polynomial**: ~0xEDB88320~
+- **Initial Value**: ~0xFFFFFFFF~
+- **Final XOR**: ~0xFFFFFFFF~
+- **Reflection**: Input and Output bits are reflected
+
+* Global Header
+The Global Header is a 16-byte sequence located at the start of the file/stream.
+
+| Offset | Field        | Size (Bytes) | Description                                   |
+|--------+--------------+--------------+-----------------------------------------------|
+|      0 | Magic Word   |            4 | ~0x42 0x43 0x46 0x00~ ("BCF\0")               |
+|      4 | Major Ver    |            1 | Changes if the Block Layer structure evolves  |
+|      5 | Minor Ver    |            1 | Non-breaking updates                          |
+|      6 | Reserved     |            6 | Padding bytes (0x00)                          |
+|     12 | Header CRC   |            4 | CRC32 of offsets 0-11                         |
+
+** Versioning Logic
+*** Major Version
+The major version tracks the physical layout of the global header and the common block header.
+- **When it changes**: if the size or the order of any field in the headers changes.
+- **Parser Behaviour**: if ~format_major > parser_major~, the parser must stop. It cannot safely
+  calculate offsets.
+
+*** Minor Version
+The minor version tracks the use of previously unused space (reserved bytes) within
+the existing headers.
+- **When it changes**: assignment of new meanings or new fields within existing reserved bytes
+  or the use of previously undefined bit-flags.
+- **Parser Behaviour**: if ~format_minor > parser_minor~, the parser should continue.
+  It ignores the specific new features but can safetly navigate the stream.
+
+  
+* Block (Transport Layer)
+The **Block** (or frame) is the primary unit of transport. It provides basic metadata to
+navigate the stream without requiring knowledge of the internal data structure.
+
+| Offset | Field        | Size (Bytes) | Description                                    |
+|--------+--------------+--------------+------------------------------------------------|
+|      0 | Magic Number |            4 | ~0x3F2A1B0C~ (Stored as ~0x0C 0x1B 0x2A 0x3F~) |
+|      4 | Type         |            1 | The type of data stored inside the payload     |
+|      5 | Reserved     |            3 | Padding bytes (0x00)                           |
+|      8 | Block ID     |            4 | 32-bit sequential ID number                    |
+|     12 | Payload Len  |            4 | Length in bytes of the payload                 |
+|     16 | Payload CRC  |            4 | CRC32 of the payload                           |
+|     20 | Header CRC   |            4 | CRC32 of the block header (offsets 0-19)       | 
+
+** Design Principles
+- **Atomic Validation**: The Header CRC must be verified before processing any other field.
+- **Safety Isolation**: By validating the Payload CRC at the transport level, the format
+  ensures that corrupted data never reaches internal layers.
