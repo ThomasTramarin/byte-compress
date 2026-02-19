@@ -8,7 +8,9 @@
 #define BCF_H
 
 #include "version.h"
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* Global Header constants */
 #define BCF_GH_MAGIC_LEN 4
@@ -24,10 +26,13 @@
 typedef enum {
     BCF_SUCCESS = 0,
     BCF_ERR_INVALID_ARG = -1,
-    BCF_ERR_BAD_MAGIC = -2,
-    BCF_ERR_UNSUPPORTED = -3,
-    BCF_ERR_CRC_MISMATCH = -4,
-    BCF_ERR_INTERNAL = -5
+    BCF_ERR_UNSUPPORTED_MAJOR = -2,
+    BCF_ERR_UNSUPPORTED_MINOR = -3,
+    BCF_ERR_BAD_MAGIC = -4,
+    BCF_ERR_CRC_MISMATCH = -5,
+    BCF_ERR_IO = -6,
+    BCF_ERR_TRUNCATED = -7,
+    BCF_ERR_INTERNAL = -8,
 } bcf_status_t;
 
 /**
@@ -45,7 +50,9 @@ typedef struct {
 } bcf_global_header_t;
 
 /* Functions */
-int bcf_serialize_global_header(const bcf_global_header_t *hdr, uint8_t *out_buf);
-int bcf_deserialize_global_header(bcf_global_header_t *out, const uint8_t *in_buf);
+int bcf_gh_serialize(const bcf_global_header_t *hdr, uint8_t *out_buf);
+int bcf_gh_deserialize(bcf_global_header_t *out, const uint8_t *in_buf);
+int bcf_gh_sizeof(const bcf_global_header_t *hdr);
+int bcf_gh_sizeof_prefix(const uint8_t prefix[6]);
 
 #endif
