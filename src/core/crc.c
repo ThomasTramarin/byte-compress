@@ -78,3 +78,14 @@ crc32_t crc32_update_buf(crc32_t crc, const void *data, size_t len) {
 crc32_t crc32_finalize(crc32_t crc) {
     return ~crc;
 }
+
+/**
+ * @brief Calculate CRC-32 of a buffer in a single operation
+ */
+crc32_t crc32_calculate(const void *data, size_t len) {
+    crc32_t crc = crc32_init();
+
+    crc = crc32_update_buf(crc, data, len);
+
+    return crc32_finalize(crc);
+}
