@@ -26,7 +26,8 @@ The Global Header is a 16-byte sequence located at the start of the file/stream.
 |      0 | Magic Word   |            4 | ~0x42 0x43 0x46 0x00~ ("BCF\0")               |
 |      4 | Major Ver    |            1 | Changes if the Block Layer structure evolves  |
 |      5 | Minor Ver    |            1 | Non-breaking updates                          |
-|      6 | Reserved     |            6 | Padding bytes (0x00)                          |
+|      6 | Reserved     |            2 | Padding bytes (0x00)                          |
+|      8 | Block Size   |            4 | Default size of uncompressed data blocks      |
 |     12 | Header CRC   |            4 | CRC32 of offsets 0-11                         |
 
 ** Versioning Logic
