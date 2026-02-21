@@ -22,6 +22,7 @@
  */
 
 #include "bcf.h"
+#include "bcomp.h"
 #include "bcomp_endian.h"
 #include "crc.h"
 #include <stdlib.h>
@@ -44,13 +45,20 @@ static int gh_v1_validate(const bcf_global_header_t *hdr) {
         // currently only version 1.0 is supported
         return BCF_ERR_UNSUPPORTED_MINOR;
     }
+
+    // validate block_size
+    if (hdr->block_size < BCOMP_BLOCK_SIZE_MIN || hdr->block_size > BCOMP_BLOCK_SIZE_MAX)
+        return BCF_ERR_INVALID_ARG;
+
     return BCF_SUCCESS;
 }
 
 /**
  * @brief Serializes the version 1.x specific part of the header.
  *
- * Version 1 reserves 6 bytes, currently (in version 1.0) zero-filled.
+ * Version 1:
+ *   2 reserved bytes
+ *   4 bytes for the size of uncompressed blocks (payload)
  *
  * @param hdr Pointer to the global header structure
  * @param out_specific Pointer to the buffer where version-specific bytes are written
@@ -59,24 +67,29 @@ static int gh_v1_validate(const bcf_global_header_t *hdr) {
 static int gh_v1_serialize(const bcf_global_header_t *hdr, uint8_t *out_specific) {
     (void)hdr; // minor version already validated by gh_v1_validate
 
-    memset(out_specific, 0, BCF_GH_V1_LEN);
+    memset(out_specific, 0, 2); // reserved zero-filled
+
+    // serialize the block_size in LE format
+    write_uint32_le(out_specific + 2, hdr->block_size);
+
     return BCF_GH_V1_LEN;
 }
 
 /**
  * @brief Deserializes the version 1.x specific part of the header.
  *
- * Since version 1 does not store additional data, this function
- * simply returns the number of bytes to skip.
+ *
  *
  * @param hdr Pointer to the header structure to populate
  * @param in_specific Pointer to the version-specific bytes in the buffer
  * @return Number of bytes read (6), or negative error code
  */
 static int gh_v1_deserialize(bcf_global_header_t *hdr, const uint8_t *in_specific) {
-    (void)hdr; // minor version already validated by gh_v1_validate
 
-    (void)in_specific;
+    in_specific += 2; // skip reserved bytes
+
+    hdr->block_size = read_uint32_le(in_specific);
+
     return BCF_GH_V1_LEN;
 }
 
@@ -163,8 +176,10 @@ int bcf_gh_sizeof(const bcf_global_header_t *hdr) {
 /**
  * @brief Calculate the total size of the global header from the first 6 bytes
  *
- * This function is used to know how much memory allocate before reading
- * data from a stream.
+ * This function is used to know how much memory allocate before calling bcf_gh_deserialize().
+ *
+ * @param prefix A buffer containing at least the first 6 bytes of the stream (Magic + Major + Minor)
+ * @return The total size of global header in bytes or negative error code.
  */
 int bcf_gh_sizeof_prefix(const uint8_t prefix[6]) {
     if (!prefix)
@@ -231,16 +246,17 @@ int bcf_gh_serialize(const bcf_global_header_t *hdr, uint8_t *out_buf) {
 /**
  * @brief Deserializes a global header from a buffer.
  *
- * @param out Pointer to the global header structure to populate
- * @param in_buf Pointer to the input buffer containing serialized header
- * @return Number of bytes consumed on success, or negative bcf_status_t error code
+ * @param out Pointer to the global header structure to be populated
+ * @param in_buf Pointer to the input buffer containing serialized header (must be at least bcf_gh_sizeof_prefix() bytes)
+ * @return Number of bytes consumed (success), or negative bcf_status_t error code
  */
 int bcf_gh_deserialize(bcf_global_header_t *out, const uint8_t *in_buf) {
     if (!out || !in_buf)
         return BCF_ERR_INVALID_ARG;
 
-    // Reset out struct
-    memset(out, 0, sizeof(bcf_global_header_t));
+    // Temp struct
+    bcf_global_header_t tmp;
+    memset(&tmp, 0, sizeof(bcf_global_header_t));
 
     uint32_t offset = 0;
 
@@ -252,29 +268,36 @@ int bcf_gh_deserialize(bcf_global_header_t *out, const uint8_t *in_buf) {
     offset += BCF_GH_MAGIC_LEN;
 
     // read major and minor versions
-    out->ver_major = in_buf[offset++];
-    out->ver_minor = in_buf[offset++];
+    tmp.ver_major = in_buf[offset++];
+    tmp.ver_minor = in_buf[offset++];
 
-    const gh_version_entry_t *entry = NULL;
-    int status = gh_get_valid_entry(out, &entry);
-    if (status != BCF_SUCCESS)
-        return status;
+    const gh_version_entry_t *entry = gh_find_entry(tmp.ver_major);
+    if (!entry)
+        return BCF_ERR_UNSUPPORTED_MAJOR;
 
     // deserialize version-specific segment
-    int read_bytes = entry->deserialize(out, in_buf + offset);
+    int read_bytes = entry->deserialize(&tmp, in_buf + offset);
     if (read_bytes < 0)
         return read_bytes;
 
     offset += (uint32_t)read_bytes;
 
-    // verify CRC32
-    uint32_t saved_crc = read_uint32_le(in_buf + offset);
+    // CRC check
     uint32_t calculated_crc = crc32_calculate(in_buf, offset);
+    uint32_t saved_crc = read_uint32_le(in_buf + offset);
 
     if (saved_crc != calculated_crc)
         return BCF_ERR_CRC_MISMATCH;
 
     offset += BCF_GH_CRC_LEN;
+
+    // Here we are sure bytes have not been modified, validate them.
+    int status = entry->validate(&tmp);
+    if (status != BCF_SUCCESS)
+        return status;
+
+    // Copy result to the out struct
+    *out = tmp;
 
     return (int)offset;
 }

@@ -45,8 +45,12 @@ typedef enum {
  *       during serialization/deserialization.
  */
 typedef struct {
+    // Fixed
     uint8_t ver_major;
     uint8_t ver_minor;
+
+    // Specific
+    uint32_t block_size;
 } bcf_global_header_t;
 
 /* Functions */
