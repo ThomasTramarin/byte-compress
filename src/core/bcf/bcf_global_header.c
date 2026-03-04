@@ -1,13 +1,13 @@
 /**
  * @file global_header.c
  *
- * @brief Implementation of BCF Global Header serialization and deserialization.
+ * @brief BCF Global Header serialization/deserialization
  *
  * This file provides functions to serialize and deserialize the global header
  * of the BCF format. It supports multiple major versions via a version dispatch table
  *
  *
- * Layout of the global header (in memory):
+ * Layout of the global header (in-memory):
  *  - 4 bytes: MAGIC ('B', 'C', 'F', 0x00)
  *  - 1 byte : Major version
  *  - 1 byte : Minor version
@@ -78,8 +78,6 @@ static int gh_v1_serialize(const bcf_global_header_t *hdr, uint8_t *out_specific
 /**
  * @brief Deserializes the version 1.x specific part of the header.
  *
- *
- *
  * @param hdr Pointer to the header structure to populate
  * @param in_specific Pointer to the version-specific bytes in the buffer
  * @return Number of bytes read (6), or negative error code
@@ -122,7 +120,13 @@ static const gh_version_entry_t gh_version_table[] = {
     {.major = 1, .specific_size = BCF_GH_V1_LEN, .validate = gh_v1_validate, .serialize = gh_v1_serialize, .deserialize = gh_v1_deserialize},
 };
 
-/* Lookup function for major version */
+/**
+ * @brief Lookup function for major version
+ *
+ * It returns the entry of the dispatch table based on the major version number.
+ * Returns NULL if the major is invalid.
+ *
+ */
 static inline const gh_version_entry_t *gh_find_entry(uint8_t major) {
     for (size_t i = 0;
          i < sizeof(gh_version_table) / sizeof(gh_version_table[0]);
@@ -216,7 +220,7 @@ int bcf_gh_serialize(const bcf_global_header_t *hdr, uint8_t *out_buf) {
 
     uint32_t offset = 0;
 
-    // FIXED PART (MAGIG + version)
+    // FIXED PART (MAGIC + version)
     memcpy(out_buf, BCF_GH_MAGIC_BYTES, BCF_GH_MAGIC_LEN);
     offset += BCF_GH_MAGIC_LEN;
 
