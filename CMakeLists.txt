@@ -21,7 +21,10 @@ target_include_directories(bcomp_core
 file(GLOB_RECURSE CLI_SOURCES "src/cli/*.c")
 add_executable(bcomp ${CLI_SOURCES})
 
-target_include_directories(bcomp PRIVATE src/cli)
+target_include_directories(bcomp
+    PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+)
 
 # Link the CLI to the core library
 target_link_libraries(bcomp PRIVATE bcomp_core)
