@@ -11,10 +11,10 @@
 #define BCOMP_ALGO_RLE 2 // run-length encoding
 #define BCOMP_ALGO_MAX BCOMP_ALGO_RLE
 
-// ----- BLOCK SIZE LIMITS -----
-#define BCOMP_BLOCK_SIZE_MIN (4 * 1024)         // 4 KB
-#define BCOMP_BLOCK_SIZE_DEFAULT (64 * 1024)    // 64 KB
-#define BCOMP_BLOCK_SIZE_MAX (16 * 1024 * 1024) // 16 MB
+// ----- UNCOMPRESSED PAYLOAD SIZE LIMITS -----
+#define BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_MIN (4 * 1024)         // 4 KB
+#define BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_DEFAULT (64 * 1024)    // 64 KB
+#define BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_MAX (16 * 1024 * 1024) // 16 MB
 
 // ----- ERRORS -----
 typedef enum {
@@ -30,6 +30,16 @@ typedef struct {
     const char *msg; // optional
     int sys_errno;   // optional
 } bcomp_err_t;
+
+#define BCOMP_RETURN_ERR(_code, _msg, _errno) \
+    do {                                      \
+        return (bcomp_err_t){                 \
+            .code = (_code),                  \
+            .msg = (_msg),                    \
+            .sys_errno = (_errno)};           \
+    } while (0)
+
+#define BCOMP_RETURN_ERR_MSG(_code, _msg) BCOMP_RETURN_ERR(_code, _msg, 0)
 
 // ----- COMPRESSION -----
 typedef struct {
