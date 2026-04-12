@@ -7,7 +7,8 @@
 #ifndef BCF_H
 #define BCF_H
 
-#include "bcf_global_header.h";
+#include "bcf_block.h"
+#include "bcf_global_header.h"
 
 /* Error codes (used in serialization/deserialization functions) */
 typedef enum {
@@ -20,6 +21,8 @@ typedef enum {
     BCF_ERR_IO = -6,
     BCF_ERR_TRUNCATED = -7,
     BCF_ERR_INTERNAL = -8,
+    BCF_ERR_MEM = -9,
+    BCF_ERR_BUILDER_DEAD = -10,
 } bcf_status_t;
 
 #endif
