@@ -1,19 +1,19 @@
 # BCF Global Header
 
 The **Global Header** is the entry point of a BCF stream.  
-This data unit contains crucial information that will change how the next bytes are parsed.
+This data unit contains crucial information required to establish the "contract" between the encoder and the decoder.
 
 ## 1. Memory Layout (v.1.0)
-The header is a fixed-size **16-byte** structure in version 1.0.
+The header is a fixed-size **16-byte** structure.
 
-| Offset | Field      | Size (Bytes) | Category  |
-| ------ | ---------- | ------------ | --------- |
-| 0      | Magic Word | 4            | Fixed     |
-| 4      | Major Ver  | 1            | Fixed     |
-| 5      | Minor Ver  | 1            | Fixed     |
-| 6      | Reserved   | 2            | Specific  | 
-| 8      | Block size | 4            | Specific  | 
-| 12     | CRC        | 4            | Fixed     | 
+| Offset | Field                      | Size (Bytes) | Category  |
+| ------ | -------------------------- | ------------ | --------- |
+| 0      | Magic Word                 | 4            | Fixed     |
+| 4      | Major Ver                  | 1            | Fixed     |
+| 5      | Minor Ver                  | 1            | Fixed     |
+| 6      | Reserved                   | 2            | Specific  | 
+| 8      | Uncompressed Payload Size  | 4            | Specific  | 
+| 12     | CRC                        | 4            | Fixed     | 
 
 ## 2. Field Definitions
 
@@ -22,12 +22,17 @@ This string is used for file identification. The parser must check these 4 bytes
 If they do not match `BCF\0`, the file/stream is invalid.
 
 ### 2.2 Version Fields
-- **Major**: If the decoder's supported major version is lower than the file's major version, the decoder must abort.
+- **Major**: If the decoder's supported major version is lower than the file's major version, the decoder **must** abort.
 - **Minor**: If the decoder's minor version is lower than the file's, the decoder should proceed, without considering new fields.
 
-### 2.3 Block Size
+### 2.3 Uncompressed Payload Size
 This field defines the maximum size of uncompressed data allowed in a single data block.
 This allows the decompressor to pre-allocate a single buffer, optimizing memory usage.
+
+So if this value is 16KB, an original file 38KB long will be splitted into 3 different blocks:
+- 1st block: refers to the first 16KB of the original file
+- 2st block: refers to the next 16KB of the original file
+- 3rd block: refers to the remaining 6KB of the original file.
 
 ### 2.4 CRC
 The CRC is calculated over the first 12 bytes of the header.
