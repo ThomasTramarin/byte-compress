@@ -22,9 +22,9 @@
  */
 
 #include "bcf.h"
+#include "bcf_crc.h"
+#include "bcf_endian.h"
 #include "bcomp.h"
-#include "bcomp_endian.h"
-#include "crc.h"
 #include <stdlib.h>
 #include <string.h>
 

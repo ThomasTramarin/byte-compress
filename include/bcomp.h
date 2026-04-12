@@ -44,10 +44,7 @@ typedef struct {
 // ----- COMPRESSION -----
 typedef struct {
     uint8_t algo; // BCOMP_ALGO_*
-    size_t block_size;
-    /** Block size in bytes.
-     *  You can use standard dimensions (BCOMP_BLOCK_SIZE_*)
-     *  or provide a value manually  */
+    size_t uncompressed_payload_size;
 } bcomp_compression_config_t;
 
 typedef struct {
