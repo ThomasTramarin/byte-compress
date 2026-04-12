@@ -1,5 +1,5 @@
 /**
- * @file global_header.c
+ * @file bcf_global_header.c
  *
  * @brief BCF Global Header serialization/deserialization
  *
@@ -47,7 +47,7 @@ static int gh_v1_validate(const bcf_global_header_t *hdr) {
     }
 
     // validate block_size
-    if (hdr->block_size < BCOMP_BLOCK_SIZE_MIN || hdr->block_size > BCOMP_BLOCK_SIZE_MAX)
+    if (hdr->uncompressed_payload_size < BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_MIN || hdr->uncompressed_payload_size > BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_MAX)
         return BCF_ERR_INVALID_ARG;
 
     return BCF_SUCCESS;
@@ -69,8 +69,8 @@ static int gh_v1_serialize(const bcf_global_header_t *hdr, uint8_t *out_specific
 
     memset(out_specific, 0, 2); // reserved zero-filled
 
-    // serialize the block_size in LE format
-    write_uint32_le(out_specific + 2, hdr->block_size);
+    // serialize in LE format
+    write_uint32_le(out_specific + 2, hdr->uncompressed_payload_size);
 
     return BCF_GH_V1_LEN;
 }
@@ -86,7 +86,7 @@ static int gh_v1_deserialize(bcf_global_header_t *hdr, const uint8_t *in_specifi
 
     in_specific += 2; // skip reserved bytes
 
-    hdr->block_size = read_uint32_le(in_specific);
+    hdr->uncompressed_payload_size = read_uint32_le(in_specific);
 
     return BCF_GH_V1_LEN;
 }

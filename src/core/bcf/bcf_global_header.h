@@ -37,7 +37,7 @@ typedef struct {
     uint8_t ver_minor;
 
     // Specific
-    uint32_t block_size;
+    uint32_t uncompressed_payload_size;
 } bcf_global_header_t;
 
 /* Functions */
