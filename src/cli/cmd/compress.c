@@ -1,5 +1,6 @@
-#include "cli_helpers.h"
-#include "parser.h"
+#include "../cli_helpers.h"
+#include "../parser.h"
+#include "bcomp.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -86,18 +87,15 @@ int compress_run(cli_ctx_t *ctx) {
 
     FILE *ip = NULL;
     FILE *op = NULL;
+    int exit_code;
     char auto_output[256];
     const char *final_output_path = NULL;
-    // run_err_t r_err = {.code = RUN_OK, .msg = NULL, .sys_errno = 0};
 
     // open input
     if (input != NULL) {
-        ip = fopen(input, "rb");
+        ip = fopen(input, "rb"); // read binary
         if (ip == NULL) {
-            //     r_err.code = RUN_ERR_IO;
-            //     r_err.msg = "failed to open input file";
-            //     r_err.sys_errno = errno;
-            //     run_print_error(&r_err);
+            fprintf(stderr, "error: failed to open input file (%s)\n", input);
             return 1;
         }
     } else {
@@ -118,12 +116,7 @@ int compress_run(cli_ctx_t *ctx) {
 
     // check if the output file already exists
     if (final_output_path != NULL && !force && file_exists(final_output_path)) {
-        // r_err.code = RUN_ERR_IO;
-        // r_err.msg = "output file already exists (use --force to overwrite)";
-        // r_err.sys_errno = EEXIST;
-        // run_print_error(&r_err);
-        // if (ip != stdin)
-        //     fclose(ip);
+        fprintf(stderr, "error: output file (%s) already exists, use --force to overwrite\n", final_output_path);
         return 1;
     }
 
@@ -133,12 +126,7 @@ int compress_run(cli_ctx_t *ctx) {
     } else {
         op = fopen(final_output_path, "wb");
         if (op == NULL) {
-            // r_err.code = RUN_ERR_IO;
-            // r_err.msg = "failed to open output file";
-            // r_err.sys_errno = errno;
-            // run_print_error(&r_err);
-            // if (ip != stdin)
-            //     fclose(ip);
+            fprintf(stderr, "error: failed to open output file (%s)\n", final_output_path);
             return 1;
         }
     }
@@ -146,21 +134,33 @@ int compress_run(cli_ctx_t *ctx) {
     // determine the algorithm
     uint8_t algo_id;
     if (strcmp(algorithm, "rle") == 0) {
-        // algo_id = BCF_ALGO_RLE;
+        algo_id = BCOMP_ALGO_RLE;
     }
 
-    // r_err = compress_engine(ip, op, algo_id);
+    bcomp_compression_config_t conf = {
+        .algo = algo_id,
+        .uncompressed_payload_size = BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_DEFAULT,
+    };
 
-    // if (r_err.code != RUN_OK) {
-    // run_print_error(&r_err);
-    return 1;
-    // }
+    bcomp_compress_result_t res;
+
+    bcomp_err_t r_err = bcomp_compress_stream(ip, op, &conf, &res);
+
+    if (r_err.code != BCOMP_OK) {
+        fprintf(stderr, "error: compression failed: %s\n",
+                r_err.msg ? r_err.msg : "unknown error");
+        return 1;
+    } else {
+        if (op != stdout) {
+            printf("compression successful: %zu bytes -> %zu bytes\n", res.original_size, res.compressed_size);
+        }
+    }
 
     // close files (only if they are not stdin/stdout)
-    // if (ip && ip != stdin)
-    //     fclose(ip);
-    // if (op && op != stdout)
-    //     fclose(op);
+    if (ip && ip != stdin)
+        fclose(ip);
+    if (op && op != stdout)
+        fclose(op);
 
     return 0;
 }

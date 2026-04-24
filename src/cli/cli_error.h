@@ -27,5 +27,4 @@ typedef struct {
 
 const char *cli_err_code_to_string(cli_err_code_t code);
 void cli_print_error(const cli_err_t *err, const cli_ctx_t *ctx);
-
 #endif

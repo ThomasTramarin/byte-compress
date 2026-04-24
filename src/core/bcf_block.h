@@ -8,6 +8,19 @@
 
 #define BCF_BK_HDR_V1_LEN 20 // block_header is 20 bytes long
 
+#define BCF_BK_TYPE_DATA 0x01
+
+/* COMMON TAGS */
+#define BCF_BK_TAG_NULL 0x00
+
+/* DATA BLOCK */
+
+#define BCF_BK_ALGO_RAW BCOMP_ALGO_RAW
+#define BCF_BK_ALGO_RLE BCOMP_ALGO_RLE
+
+#define BCF_BK_TAG_DATA_ALGO_ID 0x01
+#define BCF_BK_TAG_DATA_PAYLOAD 0x02
+
 /**
  *  Logical block
  *

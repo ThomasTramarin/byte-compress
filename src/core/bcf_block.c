@@ -1,7 +1,7 @@
 #include "bcf_block.h"
 #include "bcf.h"
-#include "bcomp_endian.h"
-#include "crc.h"
+#include "bcf_crc.h"
+#include "bcf_endian.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -177,18 +177,12 @@ int bk_hdr_deserialize(bcf_block_t *out, uint8_t major, const uint8_t *in_buf) {
  */
 static uint32_t bk_tlv_varint_serialize(uint8_t *out, uint32_t num) {
     uint32_t i = 0;
-
-    while (num >= 0x80 && i < 4) {
-
-        // write 7 bits and set the continuation bit (MSB = 1)
-        out[i++] = (uint8_t)(num & 0x7F | 0x80);
+    while (num >= 0x80) {
+        out[i++] = (uint8_t)((num & 0x7F) | 0x80);
         num >>= 7;
     }
-
-    // write the last byte (MSB = 0)
     out[i++] = (uint8_t)(num & 0x7F);
-
-    return i; // bytes written
+    return i;
 }
 
 /**
@@ -413,7 +407,7 @@ static void bk_builder_append_tlv(bcf_bk_builder_t *b, uint8_t tag, const uint8_
     if (b->error)
         return;
 
-    size_t needed = bk_tlv_sizeof(len);
+    size_t needed = (tag == BCF_BK_TAG_NULL) ? 1 : bk_tlv_sizeof(len);
 
     if (b->offset + needed > b->cap) {
         uint32_t new_cap = (uint32_t)((b->offset + needed) * 1.25f);
@@ -432,8 +426,15 @@ static void bk_builder_append_tlv(bcf_bk_builder_t *b, uint8_t tag, const uint8_
         b->cap = new_cap;
     }
 
+    size_t written = 0;
     // serialize the tlv
-    size_t written = bcf_bk_tlv_serialize(b->buf + b->offset, b->cap - b->offset, tag, len, value);
+
+    if (tag == BCF_BK_TAG_NULL) {
+        b->buf[b->offset] = BCF_BK_TAG_NULL;
+        written = 1;
+    } else {
+        written = bcf_bk_tlv_serialize(b->buf + b->offset, b->cap - b->offset, tag, len, value);
+    }
 
     if (written == 0) {
         b->error = BCF_ERR_INTERNAL;
@@ -483,6 +484,15 @@ int bcf_bk_builder_commit(bcf_bk_builder_t *b, uint32_t seq_num, bcf_block_t *ou
         return BCF_ERR_INVALID_ARG;
     if (b->error)
         return b->error;
+
+    // 4 byte alignment
+    size_t padding = (4 - (b->offset % 4)) % 4;
+
+    if (padding > 0) {
+        for (size_t i = 0; i < padding; i++) {
+            bk_builder_append_tlv(b, BCF_BK_TAG_NULL, NULL, 0);
+        }
+    }
 
     out->seq_num = seq_num;
     out->type = b->block_type;

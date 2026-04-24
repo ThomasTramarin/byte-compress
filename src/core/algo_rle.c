@@ -1,6 +1,5 @@
-#include "bcomp_core.h"
-#include "crc.h"
-#include "errors.h"
+#include "algo.h"
+#include <stdlib.h>
 #include <string.h>
 
 /**
@@ -10,16 +9,16 @@
  * - 1 byte: MSB = 1 (flag run), lower 7 bits = count - 1 (range 1..128)
  * - 1 byte: the byte to repeat
  */
-static run_err_t rle_write_group_run(uint8_t byte, uint8_t count, uint8_t *out, size_t *out_idx, size_t out_cap) {
+static bcomp_err_t rle_write_group_run(uint8_t byte, uint8_t count, uint8_t *out, size_t *out_idx, size_t out_cap) {
     // a RUN block is always 2 bytes long
     if (*out_idx + 2 > out_cap) {
-        return (run_err_t){.code = RUN_ERR_BUF_OVERFLOW, .msg = "output buffer too small"};
+        return (bcomp_err_t){.code = BCOMP_ERR_MEM, .msg = "output buffer too small"};
     }
 
     out[(*out_idx)++] = (count - 1) | 0x80; // set the MSB to 1
     out[(*out_idx)++] = byte;
 
-    return (run_err_t){.code = RUN_OK};
+    return (bcomp_err_t){.code = BCOMP_OK};
 }
 
 /**
@@ -29,104 +28,114 @@ static run_err_t rle_write_group_run(uint8_t byte, uint8_t count, uint8_t *out, 
  * - 1 byte: MSB = 0 (flag literal), lower 7 bits = count - 1 (range 1..128)
  * - N bytes: the literal bytes
  */
-static run_err_t rle_write_group_literal(uint8_t *lits, uint8_t count, uint8_t *out, size_t *out_idx, size_t out_cap) {
+static bcomp_err_t rle_write_group_literal(uint8_t *lits, uint8_t count, uint8_t *out, size_t *out_idx, size_t out_cap) {
     // LITERAL block: 1 byte (header) + N byte
     if (*out_idx + 1 + count > out_cap) {
-        return (run_err_t){.code = RUN_ERR_BUF_OVERFLOW, .msg = "output buffer too small"};
+        return (bcomp_err_t){.code = BCOMP_ERR_MEM, .msg = "output buffer too small"};
+    }
+
+    // do nothing
+    if (count <= 0) {
+        return (bcomp_err_t){.code = BCOMP_OK};
     }
 
     out[(*out_idx)++] = (count - 1); // MSB = 0
     memcpy(&out[*out_idx], lits, count);
     *out_idx += count;
 
-    return (run_err_t){.code = RUN_OK};
+    return (bcomp_err_t){.code = BCOMP_OK};
 }
 
 /**
  * Compress a file using a RLE different implementation with MSB flag.
  *
- * @warning The FILE pointers `fi` and `fo` are not closed by this function.
- *          The caller must close them after the operation.
- *
- * Algorithm:
- *  1. Accumulate literal bytes until 3 identical bytes are found (start RUN)
- *  2. Flush literal bytes before the run
- *  3. Write the run until the byte changes or maximum length is reached (128)
- *  4. Repeat until EOF
- *  5. Update CRC32 during writing and append a trailer at the end.
-//  */
-run_err_t rle_compress(
-    const uint8_t *in_buf, size_t in_size,
-    uint8_t *out_buf, size_t out_cap, compress_result_t *res) {
+ */
+bcomp_err_t algo_rle_compress(bcf_bk_builder_t *b, const uint8_t *in_buf, uint32_t in_size) {
+    if (in_size == 0)
+        return (bcomp_err_t){.code = BCOMP_OK};
 
-    size_t in_idx = 0;
+    // out tmp buffer
+    uint32_t max_out = in_size + (in_size >> 7) + 16;
+    uint8_t *tmp_out = malloc(max_out);
+    if (!tmp_out)
+        BCOMP_RETURN_ERR_MSG(BCOMP_ERR_MEM, "RLE tmp buffer fail");
+
     size_t out_idx = 0;
     uint8_t lit_buf[128];
-    size_t lit_len = 0;
+    uint32_t lit_len = 0;
     uint8_t run_byte = 0;
-    size_t run_len = 0;
-    run_err_t err;
+    uint32_t run_len = 0;
+    bcomp_err_t err;
 
-    // iterate over each byte of the input
-    for (in_idx = 0; in_idx < in_size; in_idx++) {
-        uint8_t b = in_buf[in_idx];
+    for (uint32_t in_idx = 0; in_idx < in_size; in_idx++) {
+        uint8_t byte = in_buf[in_idx];
 
         // RUN state
         if (run_len >= 3) {
-
-            if (b == run_byte && run_len < 128) {
+            if (byte == run_byte && run_len < 128) {
                 run_len++;
                 continue;
             } else {
-                // finish run (or it is full)
-                err = rle_write_group_run(run_byte, run_len, out_buf, &out_idx, out_cap);
-                if (err.code != RUN_OK)
+                // run finished
+                err = rle_write_group_run(run_byte, (uint8_t)run_len, tmp_out, &out_idx, max_out);
+                if (err.code != BCOMP_OK) {
+                    free(tmp_out);
                     return err;
+                }
                 run_len = 0;
             }
         }
 
-        // LITERAL logic
-        lit_buf[lit_len++] = b;
+        // LIT state
+        lit_buf[lit_len++] = byte;
 
-        // start of run if last 3 bytes of lit_buf are equal
-        if (lit_len >= 3 &&
-            lit_buf[lit_len - 1] == lit_buf[lit_len - 2] &&
-            lit_buf[lit_len - 2] == lit_buf[lit_len - 3]) {
-
-            // write previous literal bytes if any
-            if (lit_len > 3) {
-                err = rle_write_group_literal(lit_buf, lit_len - 3, out_buf, &out_idx, out_cap);
-                if (err.code != RUN_OK)
-                    return err;
+        // if run starts
+        if (lit_len >= 3 && lit_buf[lit_len - 1] == lit_buf[lit_len - 2] && lit_buf[lit_len - 2] == lit_buf[lit_len - 3]) {
+            err = rle_write_group_literal(lit_buf, (uint8_t)(lit_len - 3), tmp_out, &out_idx, max_out);
+            if (err.code != BCOMP_OK) {
+                free(tmp_out);
+                return err;
             }
-            run_byte = b;
+
+            run_byte = byte;
             run_len = 3;
             lit_len = 0;
-        } else if (lit_len == 128) {
-            err = rle_write_group_literal(lit_buf, 128, out_buf, &out_idx, out_cap);
-            if (err.code != RUN_OK)
+
+        } else if (lit_len == 128) { // if lit buf is full
+            err = rle_write_group_literal(lit_buf, 128, tmp_out, &out_idx, max_out);
+            if (err.code != BCOMP_OK) {
+                free(tmp_out);
                 return err;
+            }
             lit_len = 0;
         }
     }
 
-    // flush remaining bytes
+    // flush
     if (run_len >= 3) {
-        err = rle_write_group_run(run_byte, run_len, out_buf, &out_idx, out_cap);
-        if (err.code != RUN_OK)
+        err = rle_write_group_run(run_byte, (uint8_t)run_len, tmp_out, &out_idx, max_out);
+        if (err.code != BCOMP_OK) {
+            free(tmp_out);
             return err;
+        }
     } else if (lit_len > 0) {
-        err = rle_write_group_literal(lit_buf, lit_len, out_buf, &out_idx, out_cap);
-        if (err.code != RUN_OK)
+        err = rle_write_group_literal(lit_buf, (uint8_t)lit_len, tmp_out, &out_idx, max_out);
+        if (err.code != BCOMP_OK) {
+            free(tmp_out);
             return err;
+        }
     }
 
-    res->out_written = out_idx;
-    res->in_consumed = in_idx;
-    res->last_byte_bits = 8; // RLE works with full bytes
+    if (out_idx < in_size) {
+        bcf_bk_builder_put_uint8(b, BCF_BK_TAG_DATA_ALGO_ID, BCF_BK_ALGO_RLE);
+        bcf_bk_builder_put_bytes(b, BCF_BK_TAG_DATA_PAYLOAD, tmp_out, (uint32_t)out_idx);
+    } else {
+        bcf_bk_builder_put_uint8(b, BCF_BK_TAG_DATA_ALGO_ID, BCF_BK_ALGO_RAW);
+        bcf_bk_builder_put_bytes(b, BCF_BK_TAG_DATA_PAYLOAD, in_buf, in_size);
+    }
 
-    return (run_err_t){.code = RUN_OK};
+    free(tmp_out);
+    return (bcomp_err_t){.code = BCOMP_OK};
 }
 
 /**

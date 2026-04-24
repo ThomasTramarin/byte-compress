@@ -1,10 +1,17 @@
 #ifndef ALGORITHMS_H
 #define ALGORITHMS_H
-#include "bcomp_core.h"
-#include "errors.h"
 
-run_err_t rle_compress(
-    const uint8_t *in_buf, size_t in_size,
-    uint8_t *out_buf, size_t out_cap, compress_result_t *res);
+#include <stddef.h>
+#include <stdint.h>
+
+#include "bcf.h"
+#include "bcomp.h"
+
+typedef bcomp_err_t (*bcomp_compress_fn)(
+    const uint8_t *in_buf,
+    uint32_t in_size,
+    bcf_bk_builder_t *b);
+
+bcomp_err_t algo_rle_compress(bcf_bk_builder_t *b, const uint8_t *in_buf, uint32_t in_size);
 
 #endif

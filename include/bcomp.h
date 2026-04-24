@@ -23,6 +23,7 @@ typedef enum {
     BCOMP_ERR_MEM,
     BCOMP_ERR_INVALID_ARG,
     BCOMP_ERR_INVALID_FORMAT,
+    BCOMP_ERR_INTERNAL,
 } bcomp_err_code;
 
 typedef struct {
@@ -44,14 +45,14 @@ typedef struct {
 // ----- COMPRESSION -----
 typedef struct {
     uint8_t algo; // BCOMP_ALGO_*
-    size_t uncompressed_payload_size;
+    uint32_t uncompressed_payload_size;
 } bcomp_compression_config_t;
 
 typedef struct {
-    size_t original_size;
-    size_t compressed_size;
-    size_t bytes_saved;
-    int blocks_processed;
+    uint64_t original_size;
+    uint64_t compressed_size;
+    uint64_t bytes_saved;
+    uint32_t blocks_processed;
 } bcomp_compress_result_t;
 
 bcomp_err_t bcomp_compress_stream(FILE *in, FILE *out, const bcomp_compression_config_t *config, bcomp_compress_result_t *res);

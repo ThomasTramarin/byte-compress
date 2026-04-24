@@ -1,106 +1,133 @@
-#include "algorithms.h"
+#include "algo.h"
 #include "bcf.h"
-#include "bcomp_core.h"
-#include "crc.h"
-#include "errors.h"
+#include "bcomp.h"
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 /**
- * Execute the compress process by segmenting input data into frames.
+ * Compresses data from an input stream and writes the compressed
+ * output to another stream using the BCF format.
  *
- * Data is processed in independent units (frames) with a maximum size
- * of BCF_FRAME_MAX_SIZE.
- * Compression context resets at each frame boundary.
+ * @param in
+ *      Pointer to the input FILE stream containing raw data.
+ *      The stream must be opened for writing.
+ * @param out
+ *      Pointer to the output FILE stream where the compressed BCF data
+ *      will be written. The stream must be opened for writing.
+ *
+ * @param config
+ *      Pointer to a bcomp_compression_config_t structure describing
+ *      the compression behavior. Must not be NULL.
+ *
+ * @param res
+ *      An optional pointer to a struct were informational data
+ *      will be store on success.
+ *
+ * @return
+ *      Optional pointer to a result structure that will be filled with
+ *      informational data on success.
  */
-run_err_t compress_engine(FILE *in, FILE *out, uint8_t algo_id) {
-    // write global header
-    bcf_header_t global_hdr = {
-        .algorithm = algo_id,
-        .flags = (in == stdin) ? BCF_FLAG_STREAMING : 0,
-    };
-    write_bcf_header(&global_hdr, out);
+bcomp_err_t bcomp_compress_stream(FILE *in, FILE *out,
+                                  const bcomp_compression_config_t *config,
+                                  bcomp_compress_result_t *res) {
+    memset(res, 0, sizeof(bcomp_compress_result_t));
 
-    // initialize the global context
-    compress_ctx_t ctx = {
-        .global_crc = crc32_init(),
-    };
+    if (!in)
+        BCOMP_RETURN_ERR_MSG(BCOMP_ERR_INVALID_ARG, "input FILE* is null");
 
-    // buffers
-    uint8_t in_buf[BCF_FRAME_MAX_SIZE];
-    uint8_t out_buf[BCF_FRAME_MAX_SIZE + 1024]; // buffer for compressed payload
+    if (!out)
+        BCOMP_RETURN_ERR_MSG(BCOMP_ERR_INVALID_ARG, "output FILE* is null");
 
-    compress_algo_fn_t compress_fn;
+    if (config->algo > BCOMP_ALGO_MAX)
+        BCOMP_RETURN_ERR_MSG(BCOMP_ERR_INVALID_ARG, "invalid algorithm id");
 
-    switch (algo_id) {
-    case BCF_ALGO_RLE:
-        compress_fn = rle_compress;
-        break;
-    default:
-        compress_fn = NULL;
-        break;
+    if (config->uncompressed_payload_size < BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_MIN || config->uncompressed_payload_size > BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_MAX) {
+        BCOMP_RETURN_ERR_MSG(BCOMP_ERR_INVALID_ARG, "the selected block size is invalid");
     }
 
+    // write the global header based on the newer version
+    bcf_global_header_t gh = {
+        .ver_major = BCF_CURRENT_GH_VER_MAJOR,
+        .ver_minor = BCF_CURRENT_GH_VER_MINOR,
+        .uncompressed_payload_size = config->uncompressed_payload_size,
+    };
+
+    // get the size of the header
+    int gh_size = bcf_gh_sizeof(&gh);
+    if (gh_size < 0)
+        BCOMP_RETURN_ERR_MSG(BCOMP_ERR_INVALID_FORMAT, "global header validation failed");
+
+    res->compressed_size = gh_size;
+
+    // global header
+    uint8_t *gh_buf = malloc(gh_size);
+
+    if (!gh_buf)
+        BCOMP_RETURN_ERR(BCOMP_ERR_MEM, "memory allocation error", errno);
+
+    // serialize and write
+    bcf_gh_serialize(&gh, gh_buf);
+    fwrite(gh_buf, 1, gh_size, out);
+    free(gh_buf);
+
+    bcf_bk_builder_t b;
+    bcf_bk_builder_init(&b, BCF_BK_TYPE_DATA, config->uncompressed_payload_size + 128);
+
+    // COMPRESSION LOOP
+    uint8_t *raw_buf = malloc(config->uncompressed_payload_size);
+    if (!raw_buf) {
+        BCOMP_RETURN_ERR(BCOMP_ERR_MEM, "failed to allocate read buffer", errno);
+    }
+
+    uint32_t seq_num = 0;
     size_t bytes_read;
-    int frames_written = 0;
 
-    while (1) {
-        bytes_read = fread(in_buf, 1, sizeof(in_buf), in);
+    while ((bytes_read = fread(raw_buf, 1, config->uncompressed_payload_size, in)) > 0) {
+        bcf_bk_builder_reset(&b, BCF_BK_TYPE_DATA);
 
-        // If read error
-        if (bytes_read == 0 && ferror(in)) {
-            return (run_err_t){.code = RUN_ERR_IO, .msg = "error during reading input"};
-        }
+        bcomp_err_t err = algo_rle_compress(&b, raw_buf, (uint32_t)bytes_read);
 
-        // If the source is empty at the first frame (0 bytes)
-        if (bytes_read == 0 && frames_written == 0 && feof(in)) {
-
-            // write an empty frame with BCF_FRAME_FLAG_LAST
-            bcf_frame_header_t empty_hdr = {
-                .flags = BCF_FRAME_FLAG_LAST,
-                .compressed_size = 0,
-                .uncompressed_size = 0,
-            };
-
-            write_bcf_frame_header(&empty_hdr, NULL, out);
-
-            break;
-        }
-
-        frames_written++;
-        ctx.global_crc = crc32_update_buf(ctx.global_crc, in_buf, bytes_read);
-
-        // compress
-        compress_result_t res = {0};
-        run_err_t err = compress_fn(in_buf, bytes_read, out_buf, sizeof(out_buf), &res);
-        if (err.code != RUN_OK)
+        if (err.code != BCOMP_OK) {
+            free(raw_buf);
+            bcf_bk_builder_free(&b);
             return err;
+        }
 
-        int is_last = feof(in) || (bytes_read < sizeof(in_buf));
+        // commit
+        bcf_block_t block;
+        int r = bcf_bk_builder_commit(&b, seq_num, &block);
 
-        // prepare the frame header
-        bcf_frame_header_t frame_hdr = {
-            .last_byte_bits = res.last_byte_bits,
-            .flags = is_last ? BCF_FRAME_FLAG_LAST : 0,
-            .compressed_size = res.out_written,
-            .uncompressed_size = res.in_consumed};
+        if (r != 0) {
+            free(raw_buf);
+            bcf_bk_builder_free(&b);
+            BCOMP_RETURN_ERR_MSG(BCOMP_ERR_INTERNAL, "builder commit failed");
+        }
 
-        // write the frame header
-        write_bcf_frame_header(&frame_hdr, out_buf, out);
-        // write the payload
-        fwrite(out_buf, 1, res.out_written, out);
+        r = bcf_bk_builder_write(&block, BCF_CURRENT_GH_VER_MAJOR, out);
+        if (r != 0) {
+            free(raw_buf);
+            bcf_bk_builder_free(&b);
+            BCOMP_RETURN_ERR_MSG(BCOMP_ERR_INTERNAL, "failed to write block to disk");
+        }
 
-        if (is_last)
-            break;
+        if (res) {
+            res->original_size += bytes_read;
+            res->compressed_size += block.payload_size + BCF_BK_HDR_V1_LEN;
+            res->blocks_processed++;
+        }
+
+        seq_num++;
     }
 
-    ctx.global_crc = crc32_finalize(ctx.global_crc);
+    free(raw_buf);
+    bcf_bk_builder_free(&b);
 
-    // prepare the global trailer
-    bcf_trailer_t trailer = {
-        .crc32 = ctx.global_crc,
+    if (ferror(in)) {
+        BCOMP_RETURN_ERR_MSG(BCOMP_ERR_IO, "error reading input stream");
+    }
+
+    return (bcomp_err_t){
+        .code = BCOMP_OK,
     };
-
-    // write the trailer
-    write_bcf_trailer(&trailer, out);
-
-    return (run_err_t){.code = RUN_OK};
 }
