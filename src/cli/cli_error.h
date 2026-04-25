@@ -3,6 +3,13 @@
 
 #include "cli.h"
 
+/* Exit status CLI */
+#define EXIT_OK 0
+#define EXIT_CLI_ERROR 2
+#define EXIT_IO_ERROR 3
+#define EXIT_COMPRESS_ERROR 4
+
+/* Internal Errors */
 typedef enum {
     CLI_OK = 0,
 
