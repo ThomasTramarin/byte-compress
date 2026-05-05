@@ -305,3 +305,56 @@ int bcf_gh_deserialize(bcf_global_header_t *out, const uint8_t *in_buf) {
 
     return (int)offset;
 }
+
+/**
+ * @brief Reads and deserializes a BCF global header from a FILE stream.
+ *
+ * Memory is allocated internally for the internal buffer and freed before returning
+ *
+ * @param in  Input stream (must be opened in binary mode)
+ * @param out Pointer to the header structure to populate
+ *
+ * @return Number of bytes consumed on success, or a negative
+ *         BCF_ERR_* code on failure.
+ *
+ * @note The stream position will be advanced by the header size.
+ */
+int bcf_gh_read(FILE *in, bcf_global_header_t *out) {
+    uint8_t prefix[6];
+
+    // read the prefix
+    if (fread(prefix, 1, 6, in) != 6) {
+
+        if (feof(in))
+            return BCF_ERR_EOF;
+
+        return BCF_ERR_IO;
+    }
+
+    // determine the size of the header
+    int size = bcf_gh_sizeof_prefix(prefix);
+    if (size < 0)
+        return size;
+
+    uint8_t *buf = malloc(size);
+    if (!buf)
+        return BCF_ERR_MEM;
+
+    // copy the prefix to buf
+    memcpy(buf, prefix, 6);
+
+    // read next header bytes
+    if (fread(buf + 6, 1, size - 6, in) != size - 6) {
+        free(buf);
+        if (feof(in))
+            return BCF_ERR_EOF;
+
+        return BCF_ERR_IO;
+    }
+
+    // deserialize the header
+    int r = bcf_gh_deserialize(out, buf);
+    free(buf);
+
+    return r;
+}

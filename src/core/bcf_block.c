@@ -37,6 +37,7 @@ static int bk_hdr_v1_deserialize(bcf_block_t *out, const uint8_t *in_hdr_buf) {
 
     // payload_crc is stored at [12..15] but is verified later,
     // after the full payload is read into memory
+    out->payload_crc = read_uint32_le(in_hdr_buf + 12);
 
     return BCF_BK_HDR_V1_LEN; // length
 }
@@ -293,8 +294,8 @@ size_t bcf_bk_tlv_deserialize(const uint8_t *in, uint32_t in_size, bcf_tlv_entry
     size_t varint_bytes = 0;
     out->length = bk_tlv_varint_deserialize(in + off, in_size - off, &varint_bytes);
 
-    if (varint_bytes == 0)
-        return 0;
+    // if (varint_bytes == 0)
+    //     return 0;
 
     off += varint_bytes;
 
@@ -307,6 +308,41 @@ size_t bcf_bk_tlv_deserialize(const uint8_t *in, uint32_t in_size, bcf_tlv_entry
     off += out->length;
 
     return off;
+}
+
+int bcf_bk_parse_tlvs(const bcf_block_t *bk, bcf_tlvs *out) {
+    if (!bk || !out || !bk->payload)
+        return BCF_ERR_INVALID_ARG;
+
+    size_t off = 0;
+    out->count = 0;
+
+    while (off < bk->payload_size && out->count < BCF_BK_TLV_MAX) {
+        bcf_tlv_entry_t *e = &out->entries[out->count];
+
+        int bytes_read = bcf_bk_tlv_deserialize(bk->payload + off, bk->payload_size - off, e);
+
+        if (bytes_read == 0)
+            return BCF_ERR_INTERNAL;
+
+        if (e->tag == BCF_BK_TAG_NULL) {
+            break;
+        }
+
+        off += bytes_read;
+        out->count++;
+    }
+
+    return BCF_SUCCESS;
+}
+
+const bcf_tlv_entry_t *bcf_tlvs_get(const bcf_tlvs *tlvs, uint8_t tag) {
+    for (size_t i = 0; i < tlvs->count; i++) {
+        if (tlvs->entries[i].tag == tag) {
+            return &tlvs->entries[i];
+        }
+    }
+    return NULL; // tag not found
 }
 
 /* ========================================================================= */
@@ -532,6 +568,78 @@ int bcf_bk_builder_write(const bcf_block_t *block, uint8_t major, FILE *out) {
 
     if (fwrite(block->payload, 1, block->payload_size, out) != (size_t)block->payload_size) {
         return BCF_ERR_IO;
+    }
+
+    return BCF_SUCCESS;
+}
+
+/**
+ * @brief Reads and decodes a single BCF block from the input stream.
+ *
+ * @param in   Input binary stream positioned at the start of a block
+ * @param major BCF major version (selects header format)
+ * @param out  Output block structure (must be freed with bcf_bk_free)
+ *
+ * @return BCF_SUCCESS on success,
+ *         or a negative BCF_ERR_* code on failure
+ *
+ * @note The caller owns `out->payload` and must free it.
+ * @note Stream position is advanced by one full block.
+ */
+int bcf_bk_read(FILE *in, uint8_t major, bcf_block_t *out) {
+    if (!in || !out) {
+        return BCF_ERR_INVALID_ARG;
+    }
+
+    int hdr_size = bk_hdr_sizeof(major);
+    if (hdr_size < 0) {
+        return hdr_size;
+    }
+
+    uint8_t *hdr_buf = malloc(hdr_size);
+
+    if (!hdr_buf) {
+        return BCF_ERR_MEM;
+    }
+
+    size_t n = fread(hdr_buf, 1, hdr_size, in);
+
+    if (n != hdr_size) {
+        free(hdr_buf);
+
+        if (feof(in))
+            return BCF_ERR_EOF;
+
+        return BCF_ERR_IO;
+    }
+
+    int r = bk_hdr_deserialize(out, major, hdr_buf);
+    free(hdr_buf);
+
+    if (r < 0)
+        return r;
+
+    // allocate payload
+    out->payload = malloc(out->payload_size);
+    if (!out->payload)
+        return BCF_ERR_MEM;
+
+    // read payload
+    if (fread(out->payload, 1, out->payload_size, in) != out->payload_size) {
+        free(out->payload);
+        out->payload = NULL;
+        if (feof(in))
+            return BCF_ERR_EOF;
+
+        return BCF_ERR_IO;
+    }
+
+    // verify CRC payload
+    uint32_t crc = crc32_calculate(out->payload, out->payload_size);
+    if (crc != out->payload_crc) {
+        free(out->payload);
+        out->payload = NULL;
+        return BCF_ERR_CRC_MISMATCH;
     }
 
     return BCF_SUCCESS;

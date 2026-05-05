@@ -19,10 +19,11 @@ typedef enum {
     BCF_ERR_BAD_MAGIC = -4,
     BCF_ERR_CRC_MISMATCH = -5,
     BCF_ERR_IO = -6,
-    BCF_ERR_TRUNCATED = -7,
-    BCF_ERR_INTERNAL = -8,
-    BCF_ERR_MEM = -9,
-    BCF_ERR_BUILDER_DEAD = -10,
+    BCF_ERR_EOF = -7,
+    BCF_ERR_TRUNCATED = -8,
+    BCF_ERR_INTERNAL = -9,
+    BCF_ERR_MEM = -10,
+    BCF_ERR_BUILDER_DEAD = -11,
 } bcf_status_t;
 
 #endif

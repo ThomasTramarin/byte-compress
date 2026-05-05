@@ -46,4 +46,6 @@ int bcf_gh_deserialize(bcf_global_header_t *out, const uint8_t *in_buf);
 int bcf_gh_sizeof(const bcf_global_header_t *hdr);
 int bcf_gh_sizeof_prefix(const uint8_t prefix[6]);
 
+int bcf_gh_read(FILE *in, bcf_global_header_t *out);
+
 #endif

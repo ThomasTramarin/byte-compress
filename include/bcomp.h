@@ -56,5 +56,6 @@ typedef struct {
 } bcomp_compress_result_t;
 
 bcomp_err_t bcomp_compress_stream(FILE *in, FILE *out, const bcomp_compression_config_t *config, bcomp_compress_result_t *res);
+bcomp_err_t bcomp_decompress_stream(FILE *in, FILE *out);
 
 #endif

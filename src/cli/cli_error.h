@@ -7,7 +7,7 @@
 #define EXIT_OK 0
 #define EXIT_CLI_ERROR 2
 #define EXIT_IO_ERROR 3
-#define EXIT_COMPRESS_ERROR 4
+#define EXIT_COMPRESS_DECOMPRESS_ERROR 4
 
 /* Internal Errors */
 typedef enum {

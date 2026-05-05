@@ -7,7 +7,6 @@
 extern cli_cmd_t bcomp_cmd;
 
 // ARGUMENTS
-static char *algorithm = NULL;
 static char *input = NULL;
 static char *output = NULL;
 // this flag overrides 'output', meaning that if the user writes -c,
@@ -16,7 +15,7 @@ static int to_stdout = 0;
 static int force = 0;
 
 // OPTIONS
-static cli_opt_t compress_opt[] = {
+static cli_opt_t decompress_opt[] = {
     {
         .long_name = "input",
         .short_name = 'i',
@@ -48,37 +47,24 @@ static cli_opt_t compress_opt[] = {
 };
 
 // POSITIONALS
-static const char *compress_pos_choices[] = {"rle"};
 
-static cli_pos_t compress_pos[] = {
-    {
-        .name = "algorithm",
-        .type = CLI_ARG_TYPE_STRING,
-        .value = &algorithm,
-        .flags = CLI_ARG_FLAG_REQUIRED,
-        .choices = compress_pos_choices,
-        .choices_count = ARR_SIZE(compress_pos_choices),
-        .description = "Compression algorithm to use.",
-    },
-};
+static cli_pos_t decompress_pos[] = {};
 
-int compress_run(cli_ctx_t *ctx);
+int decompress_run(cli_ctx_t *ctx);
 
-cli_cmd_t compress_cmd = {
-    .name = "compress",
-    .options = compress_opt,
-    .option_count = ARR_SIZE(compress_opt),
-    .positionals = compress_pos,
-    .positional_count = ARR_SIZE(compress_pos),
-    .run = compress_run,
-    .description = "Compress data using the specified algorithm. "
-                   "Supports streaming from stdin and automatic output naming. "
-                   "Use '-c' to pipe the result directly to other tools.",
+cli_cmd_t decompress_cmd = {
+    .name = "decompress",
+    .options = decompress_opt,
+    .option_count = ARR_SIZE(decompress_opt),
+    .positionals = decompress_pos,
+    .positional_count = ARR_SIZE(decompress_pos),
+    .run = decompress_run,
+    .description = "Decompress data",
     .parent = &bcomp_cmd,
 };
 
-int compress_run(cli_ctx_t *ctx) {
-    cli_err_t err = parse_arguments(&compress_cmd, ctx);
+int decompress_run(cli_ctx_t *ctx) {
+    cli_err_t err = parse_arguments(&decompress_cmd, ctx);
 
     if (err.code != CLI_OK) {
         cli_print_error(&err, ctx);
@@ -91,6 +77,7 @@ int compress_run(cli_ctx_t *ctx) {
     char auto_output[256];
     const char *final_output_path = NULL;
 
+    // the file must be a file
     if (input != NULL && file_is_directory(input)) {
         fprintf(stderr, "error: input is a directory (%s)\n", input);
         exit_code = EXIT_IO_ERROR;
@@ -102,26 +89,36 @@ int compress_run(cli_ctx_t *ctx) {
         ip = fopen(input, "rb"); // read binary
         if (ip == NULL) {
             fprintf(stderr, "error: failed to open input file (%s)\n", input);
-            exit_code = EXIT_IO_ERROR;
-            goto cleanup;
+            return EXIT_IO_ERROR;
         }
     } else {
         ip = stdin;
     }
 
-    // determine output path
     if (to_stdout) {
-        final_output_path = NULL; // stdout
+        final_output_path = NULL;
     } else if (output != NULL) {
         final_output_path = output;
     } else if (input != NULL) {
-        snprintf(auto_output, sizeof(auto_output), "%s.bcomp", input);
+        // copy str
+        strncpy(auto_output, input, sizeof(auto_output));
+        auto_output[sizeof(auto_output) - 1] = '\0';
+
+        size_t len = strlen(auto_output);
+        const char *suffix = ".bcomp";
+        size_t s_len = strlen(suffix);
+
+        if (len > s_len && strcmp(auto_output + len - s_len, suffix) == 0) {
+            auto_output[len - s_len] = '\0'; // remove ".bcomp"
+        } else {
+            strncat(auto_output, ".out", sizeof(auto_output) - strlen(auto_output) - 1);
+        }
         final_output_path = auto_output;
+
     } else {
-        final_output_path = NULL; // stdout by default if input is stdin
+        final_output_path = NULL;
     }
 
-    // check if the output file already exists
     if (final_output_path != NULL && !force && file_exists(final_output_path)) {
         fprintf(stderr, "error: output file (%s) already exists, use --force to overwrite\n", final_output_path);
         exit_code = EXIT_IO_ERROR;
@@ -140,33 +137,16 @@ int compress_run(cli_ctx_t *ctx) {
         }
     }
 
-    // determine the algorithm
-    uint8_t algo_id;
-    if (strcmp(algorithm, "rle") == 0) {
-        algo_id = BCOMP_ALGO_RLE;
-    } else {
-        fprintf(stderr, "error: unsupported algorithm (%s)\n", algorithm);
-        exit_code = EXIT_CLI_ERROR;
-        goto cleanup;
-    }
-
-    bcomp_compression_config_t conf = {
-        .algo = algo_id,
-        .uncompressed_payload_size = BCOMP_UNCOMPRESSED_PAYLOAD_SIZE_DEFAULT,
-    };
-
-    bcomp_compress_result_t res;
-
-    bcomp_err_t r_err = bcomp_compress_stream(ip, op, &conf, &res);
+    bcomp_err_t r_err = bcomp_decompress_stream(ip, op);
 
     if (r_err.code != BCOMP_OK) {
-        fprintf(stderr, "error: compression failed: %s\n",
+        fprintf(stderr, "error: decompression failed: %s\n",
                 r_err.msg ? r_err.msg : "unknown error");
         exit_code = EXIT_COMPRESS_DECOMPRESS_ERROR;
         goto cleanup;
     }
 
-    fprintf(stderr, "compression successful: %zu bytes -> %zu bytes\n", res.original_size, res.compressed_size);
+    fprintf(stderr, "decompression successful\n");
 
 cleanup:
     // close files (only if they are not stdin/stdout)

@@ -4,6 +4,7 @@
 
 extern cli_cmd_t compress_cmd;
 extern cli_cmd_t help_cmd;
+extern cli_cmd_t decompress_cmd;
 
 static int display_version;
 
@@ -19,6 +20,7 @@ static cli_opt_t bcomp_cmd_options[] = {
 
 static cli_cmd_t *bcomp_cmd_subcommands[] = {
     &compress_cmd,
+    &decompress_cmd,
     &help_cmd,
 };
 

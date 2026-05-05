@@ -138,87 +138,42 @@ bcomp_err_t algo_rle_compress(bcf_bk_builder_t *b, const uint8_t *in_buf, uint32
     return (bcomp_err_t){.code = BCOMP_OK};
 }
 
-/**
- * Decompress a file compressed with RLE algorithm.
- *
- * Algorithm:
- *  1. Check that the first byte is TYPE_RLE
- *  2. Read the compressed data block by block:
- *      - If MSB=1: run block → write `count` copies of the next byte.
- *      - If MSB=0: literal block → write the next `count` bytes.
- *      - Update the CRC32 on the decompressed bytes.
- *  3. Stop at the start of the trailer (after compressed data).
- *  4. Read the CRC32 from the trailer and compare it with the computed CRC32.
- */
-// int rle_drcompress(FILE *fi, FILE *fo) {
-//     FILE *fi = fopen(input_path, "rb");
-//     FILE *fo = fopen(output_path, "wb");
-//     // Paths should already be validated, this is just a safety check
-//     if (!fi || !fo)
-//         return rle_cleanup_failed_output(fi, fo, output_path, "cannot open input or output file");
+bcomp_err_t algo_rle_decompress(const bcf_tlvs *tlvs, FILE *out) {
+    bcf_tlv_entry_t *payload = bcf_tlvs_get(tlvs, BCF_BK_TAG_DATA_PAYLOAD);
 
-//     // Calculate the size of compressed data (without header and trailer)
-//     fseek(fi, 0, SEEK_END);
-//     long file_size = ftell(fi);
-//     long compressed_data_size = file_size - sizeof(rle_header_t) - sizeof(rle_trailer_t);
-//     fseek(fi, 0, SEEK_SET);
+    if (!payload) {
+        return (bcomp_err_t){.code = BCOMP_ERR_INTERNAL};
+    }
 
-//     // Read the header
-//     rle_header_t h;
-//     fread(&h, sizeof(h), 1, fi);
-//     if (h.common.type != TYPE_RLE)
-//         return rle_cleanup_failed_output(fi, fo, output_path, "Input file is not TYPE_RLE");
+    const uint8_t *in = payload->value;
+    uint32_t size = payload->length;
 
-//     uint32_t crc_moving = 0xFFFFFFFF;
+    uint32_t i = 0;
 
-//     uint8_t write_buf[128];
+    while (i < size) {
+        uint8_t count_byte = in[i++];
 
-//     int bytes_read = 0;
+        uint8_t count = (count_byte & 0x7F) + 1;
 
-//     while (bytes_read < compressed_data_size) {
-//         int c = fgetc(fi);
-//         if (c == EOF)
-//             break;
-//         bytes_read++;
+        // RUN
+        if (count_byte & 0x80) {
+            if (i >= size)
+                return (bcomp_err_t){.code = BCOMP_ERR_INTERNAL};
 
-//         uint8_t count_byte = (uint8_t)c;
-//         uint8_t count_value = (count_byte & 0b01111111) + 1;
+            uint8_t byte = in[i++];
 
-//         if (bytes_read + ((count_byte & 0b10000000) ? 1 : count_value) > compressed_data_size) {
-//             return rle_cleanup_failed_output(fi, fo, output_path, "the input file is corrupted or invalid");
-//         }
+            for (int j = 0; j < count; j++)
+                fputc(byte, out);
+        } else {
+            // LITERAL
 
-//         // RUN
-//         if (count_byte & 0b10000000) {
-//             int run_byte = fgetc(fi);
-//             if (run_byte == EOF)
-//                 return rle_cleanup_failed_output(fi, fo, output_path, "unexpected EOF while reading run byte");
-//             bytes_read++;
-//             memset(write_buf, run_byte, count_value);
-//         } else { // LITERAL
-//             if (fread(write_buf, 1, count_value, fi) != count_value)
-//                 return rle_cleanup_failed_output(fi, fo, output_path, "unexpected EOF while reading literal bytes");
-//             bytes_read += count_value;
-//         }
-//         fwrite(write_buf, 1, count_value, fo);
-//         crc_moving = crc32_update_from_buf(crc_moving, write_buf, count_value);
-//     }
+            if (i + count > size)
+                return (bcomp_err_t){.code = BCOMP_ERR_INTERNAL};
 
-//     // here, the pointer is at the start of the trailer
-//     crc_moving ^= 0xFFFFFFFF;
+            fwrite(&in[i], 1, count, out);
+            i += count;
+        }
+    }
 
-//     // read the calculated crc in the trailer
-//     rle_trailer_t t;
-//     fread(&t, sizeof(rle_trailer_t), 1, fi);
-
-//     // check that values are the same
-//     if (crc_moving == t.common.crc32)
-//         printf("Decompression completed successfully. You can check the output file: %s\n", output_path);
-//     else
-//         return rle_cleanup_failed_output(fi, fo, output_path,
-//                                          "decompression failed: input file is corrupted or invalid");
-
-//     fclose(fi);
-//     fclose(fo);
-//     return 0;
-// }
+    return (bcomp_err_t){.code = BCOMP_OK};
+}

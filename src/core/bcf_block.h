@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#define BCF_BK_TLV_MAX 16
+
 #define BCF_BK_HDR_V1_LEN 20 // block_header is 20 bytes long
 
 #define BCF_BK_TYPE_DATA 0x01
@@ -35,6 +37,7 @@ typedef struct {
     uint32_t seq_num; // starts at 0
     uint8_t type;     // block type
     uint32_t payload_size;
+    uint32_t payload_crc;
     uint8_t *payload; // pointer to TLV stream
 } bcf_block_t;
 
@@ -68,6 +71,11 @@ typedef struct {
     const uint8_t *value;
 } bcf_tlv_entry_t;
 
+typedef struct {
+    bcf_tlv_entry_t entries[BCF_BK_TLV_MAX]; // max 16 TLVs per block
+    size_t count;
+} bcf_tlvs;
+
 /* Builder Lifecycle */
 int bcf_bk_builder_init(bcf_bk_builder_t *b, uint8_t block_type, uint32_t initial_cap);
 void bcf_bk_builder_free(bcf_bk_builder_t *b);
@@ -85,5 +93,9 @@ int bcf_bk_builder_write(const bcf_block_t *block, uint8_t major, FILE *out);
 
 /* TLV decode */
 size_t bcf_bk_tlv_deserialize(const uint8_t *in, uint32_t in_size, bcf_tlv_entry_t *out);
+int bcf_bk_parse_tlvs(const bcf_block_t *block, bcf_tlvs *out);
+const bcf_tlv_entry_t *bcf_tlvs_get(const bcf_tlvs *tlvs, uint8_t tag);
+
+int bcf_bk_read(FILE *in, uint8_t major, bcf_block_t *out);
 
 #endif
