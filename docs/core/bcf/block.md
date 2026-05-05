@@ -67,3 +67,6 @@ The TLV system allows the format to evolve without breaking older decoders:
 ### Dual-Layer Integrity
 - **Header CRC**: verified first. If it fails, the decoder must stop to avoid invalid memory allocations (not sure that the payload_size is correct, because the header is corrupted).
 - **Payload CRC**: verified once the full payload is in memory. This ensures the payload is not corrupted.
+
+## Block Types
+- [Data Block](./block_data.md)
